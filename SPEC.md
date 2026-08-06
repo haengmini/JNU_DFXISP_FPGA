@@ -448,6 +448,18 @@ Header: `case,in_w,in_h,mode,threshold,out_w,out_h,sel_mode,sel_rm,kind,idx,val`
 (register-only adaptation, no DFX) / Arm3 (DFX swaps the tone RM slot).
 Ablations: post-RGB8 gain/lift, dfx_bin, dfx_fp (`dfxisp_rm.*`).
 
+**default_ISP (new 2026-08-06, coexisting arm):** a standard ISP
+implementation following the stage order and domains of the AMD Vitis Vision
+L3 `isppipeline` example (`src/default_isp.cpp`; `rm_default_isp_top` shares
+the same 6-argument DFX contract, so it drops into the same RP slot).
+Where `RM_NORMAL_TONE` corrects **after** demosaic in the RGB domain with
+fixed WB and an identity CCM, default_ISP follows Vitis: **Bayer-domain
+BLC/gain → demosaic → adaptive AWB → real CCM**. Measured csynth: LUT 12,659
+/ DSP 28 / FF 8,803 (2.43× the LUT of RM_NORMAL_TONE's 5,202/12/3,797, with
+identical 3.650 ns timing). **Not a deployed arm yet** — mAP unevaluated,
+post-route unmeasured, and promotion to `RM_NORMAL` is undecided (origin
+`STRATEGY.md` open question #4). Details: `src/default_isp.md`.
+
 ---
 
 ## 8. Verification specification (bit-exact propagation chain)

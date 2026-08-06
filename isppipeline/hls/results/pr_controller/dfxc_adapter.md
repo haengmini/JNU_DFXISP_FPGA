@@ -1,10 +1,11 @@
 # AMD DFX Controller adoption + dfxc_trigger_adapter.v — decision record
 
 **Decision (2026-08-06): the production reconfiguration path uses the AMD
-DFX Controller IP (PG374).** The hand-written `pr_controller.v` is retained
-**for latency characterization only** (its word-count completion gives the
-stage-by-stage observability the IP does not), and is no longer the
-integration target.
+DFX Controller IP (PG374).** The hand-written `pr_controller.v` was
+initially kept as a latency instrument, then **archived later the same day**
+(`../archive/pr_controller/`) once `pr_latency_probe.v` — an auxiliary
+(optional) counter on the IP's handshake boundaries — took over the
+measurement role (§6 below).
 
 ## Why
 
@@ -18,7 +19,7 @@ integration target.
 
 Growing the custom FSM to production quality would mean re-implementing all
 of the right column; the IP gives it validated. The measurement narrative
-(trigger→done breakdown) keeps the custom FSM as its instrument.
+(trigger→done breakdown) is served by the auxiliary `pr_latency_probe.v`.
 
 ## What connects where
 
@@ -75,7 +76,7 @@ the generated ones.
 
 1. Generate/configure the DFX Controller IP: base generation is scripted
    (`scripts/dfx/gen_dfx_controller.tcl`, port contract confirmed — see the
-   probe section below); still to configure via GUI/BD: per-RM
+   probe section above); still to configure via GUI/BD: per-RM
    SHUTDOWN_REQUIRED=hw, RESET settings, and the DDR bitstream
    ADDRESS/SIZE table.
 2. Add DFX Decoupler IP on the RP boundary, driven by the IP's decouple

@@ -140,9 +140,7 @@ In order:
    `dfxc_adapter.md`: generate/configure the IP (1 VS, 2 RMs, DDR bitstream
    table, ICAP), add the DFX Decoupler, confirm generated port names, wire
    the re-synthesized `hyst_flags` ports and `rm_ap_idle`, decide the
-   post-swap `ap_start` policy. Latency measurement: the IP has no built-in
-   counter — `pr_latency_probe.v` counts the IP's handshake boundaries
-   (drain, end-to-end swap) instead. The hand-written `pr_controller.v` is
+   post-swap `ap_start` policy. The hand-written `pr_controller.v` is
    **archived** (`results/archive/pr_controller/`, retirement note inside).
 2. PS/DDR integration (Vivado Block Design).
 3. Clock/reset pin assignment for the new pblock + WNS re-verification.
@@ -152,6 +150,11 @@ In order:
    WSL2+XSIM is a documented pre-existing bug; the RTL simulation itself
    passed 10/10 transactions. It may not reproduce on native Linux/Windows
    Vivado.
+6. (Optional, auxiliary instrument) latency measurement for the paper's
+   board numbers: the DFX Controller IP has no built-in latency counter —
+   attach `pr_latency_probe.v` to the IP's handshake boundaries (drain,
+   end-to-end swap) and read it via ILA or status registers. The swap chain
+   works without it.
 
 ## Reporting principles
 

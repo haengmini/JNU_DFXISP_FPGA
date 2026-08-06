@@ -1,7 +1,9 @@
 `timescale 1ns/1ps
 // =============================================================================
-// pr_latency_probe.v — reconfiguration-latency instrument for the AMD DFX
-// Controller path (2026-08-06). The IP provides status/error registers but no
+// pr_latency_probe.v — AUXILIARY (optional) reconfiguration-latency
+// instrument for the AMD DFX Controller path (2026-08-06). Not part of the
+// functional swap chain — the checker/adapter/IP path works without it;
+// attach only when measuring (paper L5 numbers, debug). The IP provides status/error registers but no
 // built-in latency counter; its handshake signals bound every phase, so this
 // small counter block timestamps them instead:
 //   drain_cycles = shutdown_req rise -> shutdown_ack rise  (RM drain time)

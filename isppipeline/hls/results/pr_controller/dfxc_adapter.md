@@ -62,8 +62,9 @@ real IP; re-run the chain as an IP-integrated simulation in Stage 6.
    logic vs PS) — still an open decision.
 5. PS keeps observation only (AXI4-Lite: `selected_mode`, IP status
    registers).
-6. Latency measurement: the IP has **no built-in latency counter** (status/
-   error registers only), but its handshake signals bound every phase —
+6. (Auxiliary, optional — the swap chain works without it) Latency
+   measurement: the IP has **no built-in latency counter** (status/error
+   registers only), but its handshake signals bound every phase —
    `pr_latency_probe.v` (same directory) counts drain (shutdown req→ack)
    and end-to-end swap (trigger→decouple release); verified inside
    `checker_to_dfxc_tb.v` (probe: drain=4, swap=38 cycles on the contract

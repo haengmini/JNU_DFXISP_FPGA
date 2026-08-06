@@ -15,7 +15,7 @@ superseded by this module for the DFX arm.
 dfxisp_accel (HLS core)                 checker_hysteresis.v (this, static region)
   per-frame dark-pixel scan               mode state (1 FF) + Schmitt band
   2 band compares:                        min-dwell counter
-    hyst_flags[0] = ratio > 62% (enter)   pr_trigger request/ack handshake
+    hyst_flags[0] = ratio > 64% (enter)   pr_trigger request/ack handshake
     hyst_flags[1] = ratio < 60% (exit)
   exports hyst_flags + ap_vld  ──────▶    consumes one flag pair per frame
 ```
@@ -23,9 +23,10 @@ dfxisp_accel (HLS core)                 checker_hysteresis.v (this, static regio
 - The HLS core stays **stateless** — its single-frame verdict
   (`selected_mode`) and the golden CSV contract are unchanged (csim remains
   bit-exact; verified after the change: 726 px golden compare PASS).
-- The two thresholds are compile-time constants in `dfxisp_accel.cpp`
-  (`DARK_RATIO_PCT` = 62, `HYST_EXIT_PCT` = 60, delta = 2%p per the C1
-  spec). The dark-pixel level itself stays the runtime
+- The band edges are compile-time constants in `dfxisp_accel.cpp`
+  (`HYST_ENTER_PCT` = 64, `HYST_EXIT_PCT` = 60 — delta = 2%p around the
+  62% center per checker-principles principle 5; the single-frame verdict
+  keeps `DARK_RATIO_PCT` = 62 independently). The dark-pixel level itself stays the runtime
   `dark_pixel_threshold` AXI-Lite register (256 = 16<<4 in raw12).
 - Forced NORMAL/LOW_LIGHT modes export flags matching the override, so the
   hysteresis block tracks a forced mode instead of fighting it.

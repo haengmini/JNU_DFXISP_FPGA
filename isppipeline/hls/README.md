@@ -166,7 +166,7 @@ partitioned along the intended static/RM boundary:
 - `checker_select_mode()` — static-region scene checker. Under `AUTO`
   decides NORMAL/LOW_LIGHT from the dark-pixel ratio, and (2026-08-06)
   additionally exports the two Schmitt band compares (`hyst_flags`:
-  above-enter 62% / below-exit 60%) per frame. The scene-level hysteresis
+  above-enter 64% / below-exit 60%; δ=2%p around the 62% center) per frame. The scene-level hysteresis
   state itself lives in the static-region RTL module
   `results/pr_controller/checker_hysteresis.v`, which drives the PR
   controller trigger directly — this single-frame C-sim entry stays

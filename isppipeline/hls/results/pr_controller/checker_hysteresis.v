@@ -4,7 +4,7 @@
 // Consumes the per-frame band flags exported by dfxisp_accel (hyst_flags value
 // + hyst_flags_ap_vld pulse), owns the stable mode state, and on a mode
 // transition raises pr_trigger, holding it until pr_controller accepts (busy).
-// This implements the 2026-07-03 adoption (Schmitt delta = 2%p + min-dwell) in
+// This implements the 2026-07-03 adoption (Schmitt delta = 2%p around the 62% center: enter 64 / exit 60, + min-dwell) in
 // fabric — the PS only observes; it is not in the decision path.
 // Flag encoding, protocol, and design notes: checker_hysteresis.md.
 // =============================================================================
@@ -19,7 +19,7 @@ module checker_hysteresis #(
 
     // Per-frame flags from the HLS core
     input  wire flags_vld,      // hyst_flags_ap_vld: one pulse per completed frame
-    input  wire above_enter,    // hyst_flags[0]: dark ratio > enter threshold (62%)
+    input  wire above_enter,    // hyst_flags[0]: dark ratio > enter threshold (64%)
     input  wire below_exit,     // hyst_flags[1]: dark ratio < exit threshold (60%)
 
     // pr_controller handshake (results/pr_controller/pr_controller.v)

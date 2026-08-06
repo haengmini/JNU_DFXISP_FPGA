@@ -173,10 +173,12 @@ int main() {
         assert(sr62 == DFXISP_RM_LOW_LIGHT_TONE);
     }
 
-    // Schmitt-band flag export (checker_hysteresis.v contract): the two band
-    // compares must classify below-exit / in-band / above-enter around the
-    // 60/62% thresholds. On 64 px: 38 dark = 59.4% (< 60), 39 = 60.9%
-    // (inside the band), 40 = 62.5% (> 62).
+    // Schmitt-band flag export (checker_hysteresis.v contract): band =
+    // delta 2%p around the 62% center -> enter > 64%, exit < 60%
+    // (checker-principles-2026-07-05 principle 5). On 64 px: 38 dark = 59.4%
+    // (< 60), 39 = 60.9% and 40 = 62.5% (inside the band -- note 62.5%
+    // flips the single-frame verdict but NOT the scene-level band),
+    // 41 = 64.06% (> 64).
     {
         auto flags_for = [&](int dark_px) {
             uint16_t f[W * H];
@@ -190,7 +192,8 @@ int main() {
         };
         assert(flags_for(38) == DFXISP_HYST_BELOW_EXIT);
         assert(flags_for(39) == 0);
-        assert(flags_for(40) == DFXISP_HYST_ABOVE_ENTER);
+        assert(flags_for(40) == 0);
+        assert(flags_for(41) == DFXISP_HYST_ABOVE_ENTER);
         // Forced modes report flags matching the override so a wired
         // hysteresis block tracks the override instead of fighting it.
         uint32_t tmp[W * H] = {};

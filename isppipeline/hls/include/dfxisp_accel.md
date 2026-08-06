@@ -63,7 +63,8 @@ gamma-2.0, not gamma-4.0.
 ## `hyst_flags` output (added 2026-08-06)
 
 The 11th argument `int* hyst_flags` exports the per-frame Schmitt band
-compares (`DfxIspHystFlag` bits: above-enter 62% / below-exit 60%) as a
+compares (`DfxIspHystFlag` bits: above-enter 64% / below-exit 60%; δ=2%p
+around the 62% center) as a
 fabric wire (`ap_vld` interface, not s_axilite) for
 `results/pr_controller/checker_hysteresis.v`, which owns the mode state and
 triggers the PR controller directly. May be null in C-sim (write skipped).

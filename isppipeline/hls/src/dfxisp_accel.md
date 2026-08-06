@@ -139,8 +139,9 @@ state and trigger the PR controller directly — implementing the 2026-07-03
 adoption (Schmitt delta = 2%p + min-dwell in HW, no PS in the decision
 path):
 
-- `hyst_flags[0]` (`DFXISP_HYST_ABOVE_ENTER`) = dark ratio > `DARK_RATIO_PCT`
-  (62%, enter)
+- `hyst_flags[0]` (`DFXISP_HYST_ABOVE_ENTER`) = dark ratio > `HYST_ENTER_PCT`
+  (64%, enter; band = 2%p around the 62% center — the single-frame verdict
+  keeps `DARK_RATIO_PCT` = 62 independently)
 - `hyst_flags[1]` (`DFXISP_HYST_BELOW_EXIT`) = dark ratio < `HYST_EXIT_PCT`
   (60%, exit); both clear = inside the band
 - Interface: `#pragma HLS INTERFACE ap_vld` — a fabric wire pair

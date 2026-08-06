@@ -29,10 +29,11 @@ enum DfxIspSelectedRm : int {
 };
 
 // Per-frame Schmitt-band flags exported for the static-region hysteresis
-// block (results/pr_controller/checker_hysteresis.v). Both clear = dark
-// ratio inside the (exit, enter] band. See dfxisp_accel.md §7.
+// block (results/pr_controller/checker_hysteresis.v). Band = delta 2%p
+// around the 62% center (checker-principles principle 5): enter > 64%,
+// exit < 60%. Both clear = inside the band. See dfxisp_accel.md §7.
 enum DfxIspHystFlag : int {
-    DFXISP_HYST_ABOVE_ENTER = 1 << 0,  // dark ratio > enter threshold (62%)
+    DFXISP_HYST_ABOVE_ENTER = 1 << 0,  // dark ratio > enter threshold (64%)
     DFXISP_HYST_BELOW_EXIT = 1 << 1,   // dark ratio < exit threshold (60%)
 };
 

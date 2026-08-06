@@ -6,7 +6,7 @@ version: 1.3
 created: 2026-07-02
 updated: 2026-08-06 — Schmitt hysteresis moved into fabric (this repo):
   `dfxisp_accel` now exports per-frame band flags (`hyst_flags`, ap_vld wire,
-  11th argument; enter 62% / exit 60%) and the new static-region module
+  11th argument; band = 2%p around the 62% center: enter 64% / exit 60%) and the new static-region module
   `results/pr_controller/checker_hysteresis.v` owns the mode state and drives
   `pr_controller.trigger` directly (request/ack, no PS in the decision path) —
   implementing the 2026-07-03 adoption that had stayed unimplemented; the
@@ -221,8 +221,8 @@ AUTO       -> dark_ratio = count(dark) / (W*H)
   `results/checker-oracle-label-gate2-2026-07-20.md`.
 - **Hysteresis (scene level) — in fabric since 2026-08-06:** the
   single-frame entry stays stateless, but it now exports two Schmitt band
-  compares per frame (`hyst_flags`: above-enter 62% / below-exit 60%,
-  δ=2%p) as an ap_vld wire, and the static-region module
+  compares per frame (`hyst_flags`: above-enter 64% / below-exit 60% —
+  δ=2%p around the 62% center, checker-principles principle 5) as an ap_vld wire, and the static-region module
   `results/pr_controller/checker_hysteresis.v` owns the mode flip-flop,
   min-dwell (`DWELL_FRAMES`, default 1), and the `pr_trigger` request/ack
   to the PR controller — no PS in the decision path (the PS only observes
@@ -419,7 +419,7 @@ arguments, the 4 metadata outputs, and `return` = `s_axilite` (control).
 `hyst_flags` is the exception: an `ap_vld` fabric wire pair
 (`hyst_flags[31:0]` + `hyst_flags_ap_vld`, one pulse per completed frame)
 feeding `checker_hysteresis.v` directly — not an s_axilite register
-(§3.1; bit 0 = above-enter 62%, bit 1 = below-exit 60%).
+(§3.1; bit 0 = above-enter 64%, bit 1 = below-exit 60% — center 62%).
 
 ### 6.2 Golden vector CSV format (verification contract)
 

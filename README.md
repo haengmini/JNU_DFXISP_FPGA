@@ -51,17 +51,19 @@ repo — every script works verbatim.
 
 Long design-background comments from the sources have been **split into
 same-named `.md` notes next to each file** (`src/dfxisp_accel.md`,
-`include/dfxisp_accel.md`, `results/pr_controller/pr_controller.md`,
-`results/pr_controller/checker_hysteresis.md`,
-`results/icap_sim/icap_pr_latency_tb.md`). The code keeps only a short
-summary plus a pointer to the note.
+`include/dfxisp_accel.md`, `results/pr_controller/checker_hysteresis.md`,
+`results/pr_controller/dfxc_adapter.md`,
+`results/icap_sim/icap_pr_latency_tb.md`; the archived
+`results/archive/pr_controller/pr_controller.md`). The code keeps only a
+short summary plus a pointer to the note.
 
 **Mode switching is fabric-internal** (2026-08-06): the HLS checker exports
-per-frame Schmitt band flags (`hyst_flags`, ap_vld wire), and
-`checker_hysteresis.v` owns the mode state and drives
-`pr_controller.trigger` directly — the PS only observes. The full chain is
-simulated in `checker_to_pr_tb.v` (xsim PASS). See
-`checker_hysteresis.md` for the protocol and the remaining Stage 6 wiring.
+per-frame Schmitt band flags (`hyst_flags`, ap_vld wire),
+`checker_hysteresis.v` owns the mode state, and `dfxc_trigger_adapter.v`
+drives the AMD DFX Controller's hardware triggers — the PS only observes.
+The full chain (with the latency probe) is simulated in
+`checker_to_dfxc_tb.v` (xsim PASS). See `checker_hysteresis.md` and
+`dfxc_adapter.md` for the protocol and the remaining Stage 6 wiring.
 
 ## Datasets — the input is real RAW (not pseudo-RAW)
 

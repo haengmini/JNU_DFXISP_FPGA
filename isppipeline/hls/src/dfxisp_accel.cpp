@@ -30,6 +30,11 @@ constexpr int GAIN_LOWLIGHT_NUM = 2, GAIN_LOWLIGHT_DEN = 1;  // low-light 2.0x
 // Driver must write dark_pixel_threshold = 256 (= 16<<4 in this raw12 domain).
 // Selection evidence and metrics: dfxisp_accel.md §2.
 constexpr int DARK_RATIO_PCT = 62;      // AUTO -> LOW_LIGHT when dark pixels > 62%
+// Schmitt exit threshold: leave LOW_LIGHT only below 60% (delta = 2%p per the
+// C1 spec / 2026-07-03 adoption). The mode state itself lives in the
+// static-region RTL block results/pr_controller/checker_hysteresis.v; this
+// core only exports the two band-compare flags per frame (dfxisp_accel.md §7).
+constexpr int HYST_EXIT_PCT = 60;
 
 static inline int clamp_i(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static inline uint8_t clamp_u8(int v) { return static_cast<uint8_t>(clamp_i(v, 0, 255)); }
@@ -81,16 +86,31 @@ constexpr int MAX_BINNED_W = 960;
 // Scene checker / mode decision (static region). Dark-pixel ratio on RAW.
 // ---------------------------------------------------------------------------
 static int checker_select_mode(const uint16_t* raw, int width, int height, int mode,
-                               uint16_t dark_pixel_threshold) {
-    if (mode == DFXISP_MODE_NORMAL) return DFXISP_MODE_NORMAL;
-    if (mode == DFXISP_MODE_LOW_LIGHT) return DFXISP_MODE_LOW_LIGHT;
+                               uint16_t dark_pixel_threshold, int& hyst_flags) {
+    // Forced modes report flags matching the forced state so the hysteresis
+    // block (if wired) tracks the override instead of fighting it.
+    if (mode == DFXISP_MODE_NORMAL) {
+        hyst_flags = DFXISP_HYST_BELOW_EXIT;
+        return DFXISP_MODE_NORMAL;
+    }
+    if (mode == DFXISP_MODE_LOW_LIGHT) {
+        hyst_flags = DFXISP_HYST_ABOVE_ENTER;
+        return DFXISP_MODE_LOW_LIGHT;
+    }
     const int n = width * height;
     int dark = 0;
     for (int i = 0; i < n; ++i) {
 #pragma HLS LOOP_TRIPCOUNT min=16 max=2073600
         if (raw[i] < dark_pixel_threshold) ++dark;
     }
-    return (dark * 100 > DARK_RATIO_PCT * n) ? DFXISP_MODE_LOW_LIGHT : DFXISP_MODE_NORMAL;
+    const bool above_enter = dark * 100 > DARK_RATIO_PCT * n;
+    const bool below_exit = dark * 100 < HYST_EXIT_PCT * n;
+    hyst_flags = (above_enter ? DFXISP_HYST_ABOVE_ENTER : 0) |
+                 (below_exit ? DFXISP_HYST_BELOW_EXIT : 0);
+    // The single-frame verdict (Arm2 runtime branch / golden contract) keeps
+    // the plain enter-threshold compare; the Schmitt state machine consumes
+    // the flags outside this core.
+    return above_enter ? DFXISP_MODE_LOW_LIGHT : DFXISP_MODE_NORMAL;
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +332,8 @@ extern "C" void dfxisp_accel(
     int* out_width,
     int* out_height,
     int* selected_mode,
-    int* selected_rm) {
+    int* selected_rm,
+    int* hyst_flags) {
 // depth= only sizes cosim's m_axi BFM memory model (no effect on synthesized
 // RTL); 2048 = headroom over the cumulative cosim address span. Full story:
 // dfxisp_accel.md §6.
@@ -328,6 +349,11 @@ extern "C" void dfxisp_accel(
 #pragma HLS INTERFACE s_axilite port=out_height bundle=control
 #pragma HLS INTERFACE s_axilite port=selected_mode bundle=control
 #pragma HLS INTERFACE s_axilite port=selected_rm bundle=control
+// hyst_flags is a fabric wire (value + ap_vld pulse), NOT an s_axilite
+// register: it feeds checker_hysteresis.v in the static region directly.
+// One vld pulse per completed frame; no pulse on the invalid-arg early
+// return (the hysteresis block simply holds state).
+#pragma HLS INTERFACE ap_vld port=hyst_flags
 #pragma HLS INTERFACE s_axilite port=return bundle=control
 
     if (!raw_bayer || !rgb_out || width <= 0 || height <= 0) {
@@ -338,7 +364,9 @@ extern "C" void dfxisp_accel(
         return;
     }
 
-    const int selected = checker_select_mode(raw_bayer, width, height, mode, dark_pixel_threshold);
+    int flags = 0;
+    const int selected = checker_select_mode(raw_bayer, width, height, mode, dark_pixel_threshold, flags);
+    if (hyst_flags) *hyst_flags = flags;
 
     int out_w = width, out_h = height, sel_rm = DFXISP_RM_NORMAL_TONE;
     if (selected == DFXISP_MODE_LOW_LIGHT) {

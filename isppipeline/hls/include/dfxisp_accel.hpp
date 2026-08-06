@@ -28,6 +28,14 @@ enum DfxIspSelectedRm : int {
     DFXISP_RM_LOW_LIGHT_TONE = 1,  // 2x2 binning-demosaic + gain 2.0x + gamma 2.0 (dark scenes)
 };
 
+// Per-frame Schmitt-band flags exported for the static-region hysteresis
+// block (results/pr_controller/checker_hysteresis.v). Both clear = dark
+// ratio inside the (exit, enter] band. See dfxisp_accel.md §7.
+enum DfxIspHystFlag : int {
+    DFXISP_HYST_ABOVE_ENTER = 1 << 0,  // dark ratio > enter threshold (62%)
+    DFXISP_HYST_BELOW_EXIT = 1 << 1,   // dark ratio < exit threshold (60%)
+};
+
 // Output metadata (mutually exclusive tone RM slot), as four separate scalar
 // s_axilite output pointers rather than one struct pointer -- see file header.
 // Any pointer may be null (metadata write is skipped for that field).
@@ -41,4 +49,5 @@ extern "C" void dfxisp_accel(
     int* out_width,      // baseline-core / RM output width
     int* out_height,     // baseline-core / RM output height
     int* selected_mode,  // DFXISP_MODE_NORMAL or DFXISP_MODE_LOW_LIGHT (resolved AUTO)
-    int* selected_rm);   // DfxIspSelectedRm
+    int* selected_rm,    // DfxIspSelectedRm
+    int* hyst_flags);    // DfxIspHystFlag bits (ap_vld wire out, not s_axilite)

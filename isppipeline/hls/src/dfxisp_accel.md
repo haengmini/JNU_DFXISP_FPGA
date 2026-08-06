@@ -127,3 +127,26 @@ affect synthesized RTL behavior (real depth is width*height at runtime).
   *cumulative* address span cosim's BFM uses across all calls in one session
   (7 calls × up to 256 px ≈ 1800)
 - `depth=2048`: adopted, with headroom above the current fixture set
+
+## 7. Schmitt-band flag export (`hyst_flags`, added 2026-08-06)
+
+The checker now also exports two band-compare flags per frame so the
+static-region hysteresis block
+(`results/pr_controller/checker_hysteresis.v`) can own the Schmitt mode
+state and trigger the PR controller directly — implementing the 2026-07-03
+adoption (Schmitt delta = 2%p + min-dwell in HW, no PS in the decision
+path):
+
+- `hyst_flags[0]` (`DFXISP_HYST_ABOVE_ENTER`) = dark ratio > `DARK_RATIO_PCT`
+  (62%, enter)
+- `hyst_flags[1]` (`DFXISP_HYST_BELOW_EXIT`) = dark ratio < `HYST_EXIT_PCT`
+  (60%, exit); both clear = inside the band
+- Interface: `#pragma HLS INTERFACE ap_vld` — a fabric wire pair
+  (`hyst_flags[31:0]` + `hyst_flags_ap_vld`), NOT an s_axilite register; one
+  vld pulse per completed frame, no pulse on the invalid-arg early return.
+- Forced NORMAL/LOW_LIGHT modes export the flag matching the override.
+- The single-frame verdict (`selected_mode`) and all previous outputs are
+  arithmetically unchanged — golden CSVs remain bit-exact (verified: 726 px
+  compare PASS after the change). Cost: one extra integer compare + one
+  32-bit output; §10 resource numbers may shift marginally on re-synthesis
+  (re-measure, don't assume).

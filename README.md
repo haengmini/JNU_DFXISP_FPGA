@@ -118,10 +118,18 @@ builds for bitstreams / `pr_verify`.
 
 In order:
 
-1. **Prerequisites**: connect the PR controller's
-   (`isppipeline/hls/results/pr_controller/pr_controller.v`) `drain_ready`
-   to the real RM `ap_idle`; instantiate ICAPE3/STARTUPE3; replace the BRAM
-   simulation source with the real SD/DDR path.
+1. **Prerequisites**: the fabric-internal trigger chain now exists —
+   `checker_hysteresis.v` (Schmitt mode arbiter, same dir as
+   `pr_controller.v`) consumes the HLS core's `hyst_flags`/`ap_vld` wires
+   and drives `pr_controller.trigger` with a request/ack handshake; the
+   end-to-end simulation `checker_to_pr_tb.v` passes in xsim. Remaining:
+   wire the re-synthesized `dfxisp_accel` `hyst_flags` ports to it, connect
+   `drain_ready` to the real RM `ap_idle`, instantiate ICAPE3/STARTUPE3,
+   and replace the BRAM simulation source with the real SD/DDR path. Also
+   see `checker_hysteresis.md` §"What Stage 6 still owes" for pr_controller
+   integration considerations found by source inspection (stale `NWORDS`
+   vs the new-pblock bitstream, 2-cycles-per-word streaming, ICAP clock
+   domain at its rated 100 MHz).
 2. PS/DDR integration (Vivado Block Design).
 3. Clock/reset pin assignment for the new pblock + WNS re-verification.
 4. (Optional) investigate the partition-pin count drop 15 → 3 (recorded as

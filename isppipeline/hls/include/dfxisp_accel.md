@@ -59,3 +59,12 @@ null (the metadata write for that field is skipped).
 The same review also fixed header drift: RM_NORMAL_TONE is not an "identity
 bypass" (ver1 added gain+gamma to it), and RM_LOW_LIGHT_TONE's tone is
 gamma-2.0, not gamma-4.0.
+
+## `hyst_flags` output (added 2026-08-06)
+
+The 11th argument `int* hyst_flags` exports the per-frame Schmitt band
+compares (`DfxIspHystFlag` bits: above-enter 62% / below-exit 60%) as a
+fabric wire (`ap_vld` interface, not s_axilite) for
+`results/pr_controller/checker_hysteresis.v`, which owns the mode state and
+triggers the PR controller directly. May be null in C-sim (write skipped).
+Details: `src/dfxisp_accel.md` §7 and `checker_hysteresis.md`.

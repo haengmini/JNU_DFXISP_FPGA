@@ -71,7 +71,7 @@ static void check_golden_vectors(const char* path) {
         std::vector<uint32_t> got(c.in_w * c.in_h, 0);  // capacity >= out
         int out_w = 0, out_h = 0, sel_mode = 0, sel_rm = 0;
         dfxisp_accel(c.raw.data(), got.data(), c.in_w, c.in_h, c.mode, c.threshold,
-                    &out_w, &out_h, &sel_mode, &sel_rm);
+                    &out_w, &out_h, &sel_mode, &sel_rm, nullptr);
 
         // metadata gates (mode / selected RM / output shape)
         assert(sel_mode == c.sel_mode);
@@ -111,7 +111,7 @@ int main() {
 
     uint32_t normal[W * H] = {};
     int ow_n = 0, oh_n = 0, sm_n = 0, sr_n = 0;
-    dfxisp_accel(mid, normal, W, H, DFXISP_MODE_NORMAL, 512, &ow_n, &oh_n, &sm_n, &sr_n);
+    dfxisp_accel(mid, normal, W, H, DFXISP_MODE_NORMAL, 512, &ow_n, &oh_n, &sm_n, &sr_n, nullptr);
     // normal: RM_NORMAL_TONE, shape preserved, baseline output nonzero
     assert(sm_n == DFXISP_MODE_NORMAL);
     assert(sr_n == DFXISP_RM_NORMAL_TONE);
@@ -120,7 +120,7 @@ int main() {
 
     uint32_t low[W * H] = {};
     int ow_l = 0, oh_l = 0, sm_l = 0, sr_l = 0;
-    dfxisp_accel(mid, low, W, H, DFXISP_MODE_LOW_LIGHT, 512, &ow_l, &oh_l, &sm_l, &sr_l);
+    dfxisp_accel(mid, low, W, H, DFXISP_MODE_LOW_LIGHT, 512, &ow_l, &oh_l, &sm_l, &sr_l, nullptr);
     // low-light: low-light tone RM, shape halved (Policy A)
     assert(sm_l == DFXISP_MODE_LOW_LIGHT);
     assert(sr_l == DFXISP_RM_LOW_LIGHT_TONE);
@@ -135,7 +135,7 @@ int main() {
     for (int i = 0; i < W * H; ++i) dark[i] = 200;
     uint32_t adark[W * H] = {};
     int ow_ad = 0, oh_ad = 0, sm_ad = 0, sr_ad = 0;
-    dfxisp_accel(dark, adark, W, H, DFXISP_MODE_AUTO, 512, &ow_ad, &oh_ad, &sm_ad, &sr_ad);
+    dfxisp_accel(dark, adark, W, H, DFXISP_MODE_AUTO, 512, &ow_ad, &oh_ad, &sm_ad, &sr_ad, nullptr);
     assert(sm_ad == DFXISP_MODE_LOW_LIGHT);
     assert(sr_ad == DFXISP_RM_LOW_LIGHT_TONE);
 
@@ -144,7 +144,7 @@ int main() {
     for (int i = 0; i < W * H; ++i) bright[i] = 3000;
     uint32_t abright[W * H] = {};
     int ow_ab = 0, oh_ab = 0, sm_ab = 0, sr_ab = 0;
-    dfxisp_accel(bright, abright, W, H, DFXISP_MODE_AUTO, 512, &ow_ab, &oh_ab, &sm_ab, &sr_ab);
+    dfxisp_accel(bright, abright, W, H, DFXISP_MODE_AUTO, 512, &ow_ab, &oh_ab, &sm_ab, &sr_ab, nullptr);
     assert(sm_ab == DFXISP_MODE_NORMAL);
     assert(sr_ab == DFXISP_RM_NORMAL_TONE);
 
@@ -158,7 +158,7 @@ int main() {
         for (; i < W * H; ++i) r61[i] = 3000;
         uint32_t out61[W * H] = {};
         int ow61 = 0, oh61 = 0, sm61 = 0, sr61 = 0;
-        dfxisp_accel(r61, out61, W, H, DFXISP_MODE_AUTO, 512, &ow61, &oh61, &sm61, &sr61);
+        dfxisp_accel(r61, out61, W, H, DFXISP_MODE_AUTO, 512, &ow61, &oh61, &sm61, &sr61, nullptr);
         assert(sm61 == DFXISP_MODE_NORMAL);   // 60.9% <= 62% -> NORMAL
         assert(sr61 == DFXISP_RM_NORMAL_TONE);
 
@@ -168,9 +168,38 @@ int main() {
         for (; i < W * H; ++i) r62[i] = 3000;
         uint32_t out62[W * H] = {};
         int ow62 = 0, oh62 = 0, sm62 = 0, sr62 = 0;
-        dfxisp_accel(r62, out62, W, H, DFXISP_MODE_AUTO, 512, &ow62, &oh62, &sm62, &sr62);
+        dfxisp_accel(r62, out62, W, H, DFXISP_MODE_AUTO, 512, &ow62, &oh62, &sm62, &sr62, nullptr);
         assert(sm62 == DFXISP_MODE_LOW_LIGHT);  // 62.5% > 62% -> LOW_LIGHT
         assert(sr62 == DFXISP_RM_LOW_LIGHT_TONE);
+    }
+
+    // Schmitt-band flag export (checker_hysteresis.v contract): the two band
+    // compares must classify below-exit / in-band / above-enter around the
+    // 60/62% thresholds. On 64 px: 38 dark = 59.4% (< 60), 39 = 60.9%
+    // (inside the band), 40 = 62.5% (> 62).
+    {
+        auto flags_for = [&](int dark_px) {
+            uint16_t f[W * H];
+            int i = 0;
+            for (; i < dark_px; ++i) f[i] = 200;
+            for (; i < W * H; ++i) f[i] = 3000;
+            uint32_t out[W * H] = {};
+            int ow = 0, oh = 0, sm = 0, sr = 0, hf = -1;
+            dfxisp_accel(f, out, W, H, DFXISP_MODE_AUTO, 512, &ow, &oh, &sm, &sr, &hf);
+            return hf;
+        };
+        assert(flags_for(38) == DFXISP_HYST_BELOW_EXIT);
+        assert(flags_for(39) == 0);
+        assert(flags_for(40) == DFXISP_HYST_ABOVE_ENTER);
+        // Forced modes report flags matching the override so a wired
+        // hysteresis block tracks the override instead of fighting it.
+        uint32_t tmp[W * H] = {};
+        int d1 = 0, d2 = 0, d3 = 0, d4 = 0, hf_n = -1, hf_l = -1;
+        dfxisp_accel(mid, tmp, W, H, DFXISP_MODE_NORMAL, 512, &d1, &d2, &d3, &d4, &hf_n);
+        assert(hf_n == DFXISP_HYST_BELOW_EXIT);
+        dfxisp_accel(mid, tmp, W, H, DFXISP_MODE_LOW_LIGHT, 512, &d1, &d2, &d3, &d4, &hf_l);
+        assert(hf_l == DFXISP_HYST_ABOVE_ENTER);
+        std::cout << "DFXISP hysteresis-flag export tests passed\n";
     }
 
     // RAW-domain boundary regression (adversarial review, 2026-07-04): the dark16
@@ -186,7 +215,7 @@ int main() {
         uint32_t out_at[W * H] = {};
         int ow_at = 0, oh_at = 0, sm_at = 0, sr_at = 0;
         dfxisp_accel(at_thr, out_at, W, H, DFXISP_MODE_AUTO, 256,
-                    &ow_at, &oh_at, &sm_at, &sr_at);
+                    &ow_at, &oh_at, &sm_at, &sr_at, nullptr);
         assert(sm_at == DFXISP_MODE_NORMAL);   // 0% dark -> NORMAL
         assert(sr_at == DFXISP_RM_NORMAL_TONE);
 
@@ -195,7 +224,7 @@ int main() {
         uint32_t out_bt[W * H] = {};
         int ow_bt = 0, oh_bt = 0, sm_bt = 0, sr_bt = 0;
         dfxisp_accel(below_thr, out_bt, W, H, DFXISP_MODE_AUTO, 256,
-                    &ow_bt, &oh_bt, &sm_bt, &sr_bt);
+                    &ow_bt, &oh_bt, &sm_bt, &sr_bt, nullptr);
         assert(sm_bt == DFXISP_MODE_LOW_LIGHT);  // 100% dark -> LOW_LIGHT
         assert(sr_bt == DFXISP_RM_LOW_LIGHT_TONE);
     }
@@ -205,7 +234,7 @@ int main() {
     for (int i = 0; i < W * H; ++i) sat[i] = 4095;
     uint32_t sat_out[W * H] = {};
     int ow_s = 0, oh_s = 0, sm_s = 0, sr_s = 0;
-    dfxisp_accel(sat, sat_out, W, H, DFXISP_MODE_LOW_LIGHT, 512, &ow_s, &oh_s, &sm_s, &sr_s);
+    dfxisp_accel(sat, sat_out, W, H, DFXISP_MODE_LOW_LIGHT, 512, &ow_s, &oh_s, &sm_s, &sr_s, nullptr);
     assert(red(sat_out[0]) == 255 && green(sat_out[0]) == 255 && blue(sat_out[0]) == 255);
 
     // Chroma preservation (adversarial-review regression, 2026-07-02): a 2x2 RGGB
@@ -222,7 +251,7 @@ int main() {
         uint32_t red_out[1] = {};
         int ow_r = 0, oh_r = 0, sm_r = 0, sr_r = 0;
         dfxisp_accel(red_cell, red_out, 2, 2, DFXISP_MODE_LOW_LIGHT, 512,
-                    &ow_r, &oh_r, &sm_r, &sr_r);
+                    &ow_r, &oh_r, &sm_r, &sr_r, nullptr);
         assert(ow_r == 1 && oh_r == 1);
         // must be clearly red-dominant: this would fail under the old scalar-bin
         // bug, where all 4 samples get averaged into one value before demosaic,

@@ -35,3 +35,13 @@ can be validated in simulation without STARTUPE3.
 - ICAPE3/STARTUPE3 are not instantiated.
 
 All three are the "Stage 6 prerequisites" items in this repo's README.
+
+## Trigger source (added 2026-08-06)
+
+`trigger` is no longer an unconnected input: `checker_hysteresis.v` (same
+directory) generates it from the HLS checker's per-frame Schmitt-band flags
+and holds it until `busy` acks — see `checker_hysteresis.md` and the
+end-to-end simulation `checker_to_pr_tb.v` (xsim PASS). The same doc lists
+the remaining integration considerations found by source inspection
+(stale `NWORDS` default vs the new-pblock bitstream, 2-cycles-per-word
+streaming, 200 MHz TB clock vs ICAPE3's rated 100 MHz).

@@ -3,18 +3,85 @@
 #include <cstdint>
 
 // =============================================================================
-// DFXISP core C-sim — shared baseline ISP core + mutually exclusive tone RM
-// slot. Integer-only; bit-exact mirror of the Python golden model.
-// Updated: 2026-07-20 (BLC 2/2 + checker C1). Design history, bug-fix and
-// constant rationale: see dfxisp_accel.md (same directory).
-// =============================================================================
+// File   : isppipeline/hls/src/dfxisp_accel.cpp
+// Updated: 2026-07-20 (BLC recalibration 16/8 -> 2/2 + checker C1 deployment
+//          DARK_RATIO_PCT 80 -> 62, see constants below);
+//          2026-07-03 (low-light BLC relaxation); 2026-07-02 (adversarial-review fixes)
+// 2026-07-03 change: root-cause ablation (results/lowlight-rm-map-rootcause-2026-07-02.md,
+//   results/phase0-2-execution-2026-07-03.md) isolated WHICH part of the shared
+//   baseline core actually costs low-light mAP on ExDark. Splitting the earlier
+//   "BLC/WB" bucket into separate BLC-only, WB-only, and WB-skip variants
+//   showed the black-level offset -- not the white-balance gain -- is the
+//   driver: relaxing BLC alone (16 -> 8, 8-bit terms) recovered ExDark mAP
+//   from 0.062 to 0.150 (exceeding the 'normal' arm by 42%), while WB
+//   relaxation/skip did nothing (+7%/-0.5%). COCO stayed neutral-to-positive
+//   (+5%) so the change is safe outside its target condition too. Applied
+//   here as a low-light-only BLC offset via a new `blc_offset` parameter on
+//   `apply_blc_wb12()` -- WB/CCM stay identical between modes (still the
+//   literal same code path), only the low-light call site now passes
+//   `BLC_OFFSET12_LOWLIGHT` instead of the shared `BLC_OFFSET12`.
+// Function: DFXISP core C-sim — shared baseline ISP core + mutually exclusive
+//           tone RM slot. Integer-only; bit-exact mirror of gen_golden_vectors.py.
+// Goal   : Two corrections found by an adversarial review of the branch diff
+//          against the 2026-07-01 architecture reset (see
+//          results/experiment_ver1_2026-07-02.md and stage1-3-results for the
+//          mAP evidence this must now actually match):
+//   (1) CHROMA-COLLAPSE BUG (high severity): the low-light front end used to
+//       average all 4 RGGB samples in a 2x2 cell into ONE scalar
+//       ((p00+p01+p10+p11)/4), then re-demosaic that scalar grid as if it were
+//       still Bayer-patterned. Since every "pixel" in that grid was already a
+//       mixed R+2G+B-like average, re-demosaicing just spread near-identical
+//       values around -> low-light output was structurally desaturated
+//       (chroma destroyed before AWB/gain ever ran). Worse, the golden model
+//       (tools/gen_golden_vectors.py) mirrored the exact same bug, so
+//       `make verify`'s bit-exact test could never catch it -- HLS matched its
+//       own (wrong) golden model perfectly. Meanwhile the SW mAP evidence
+//       (tools/isp_pipeline_ver1.py `_bin_demosaic_rggb16`) used a DIFFERENT,
+//       chroma-preserving algorithm (R=top-left, G=avg(top-right,bottom-left),
+//       B=bottom-right), so the reported low-light mAP was never evidence for
+//       what this file actually computed. Fixed: `compute_binned_rgb_row()`
+//       now performs a fused 2x2 binning+demosaic in one step, extracting
+//       true per-channel R/G/B directly (bit-exact match to
+//       `_bin_demosaic_rggb16`), then feeds the shared `apply_blc_wb12()` core
+//       directly -- no second (Bayer-assuming) demosaic pass. This removed
+//       the need for `demosaic_rggb12_rows`/`baseline_core12_from_rows`/the
+//       3-row sliding window entirely (binning-demosaic only needs the 2 raw
+//       rows of its own cell, not neighbouring binned cells).
+//   (2) METADATA RTL-VISIBILITY (medium severity): `DfxIspResult* result`
+//       (a struct pointer) was declared `s_axilite`, an interface mode meant
+//       for lightweight slave-side register access, not memory-writing struct
+//       output -- no artifact (interface report, cosim) ever confirmed the
+//       four fields synthesize as separately addressable registers. Replaced
+//       with four separate scalar `int*` output pointers
+//       (out_width/out_height/selected_mode/selected_rm), the standard,
+//       well-supported Vitis HLS idiom for post-completion status registers
+//       (same pattern already used by rm_normal_tone_top/rm_low_light_tone_top
+//       below). See include/dfxisp_accel.hpp for the interface-level rationale.
+//
+// Earlier history: ver1 RAW-domain-first reordering (baseline core =
+// demosaic->BLC->WB->CCM in 12-bit, RM_NORMAL_TONE gain+gamma instead of
+// identity, RM_LOW_LIGHT_TONE gain 2.0x+gamma back); gamma2() moved from a
+// runtime Newton's-method isqrt (which dominated csynth resource, 28.6k FF/
+// 25.4k LUT for run_low_light) to a 256-entry ROM table generated once in
+// Python (std::array/constexpr was tried first but Vitis HLS's bundled
+// gcc-8.3.0 STL rejects <array> under -std=c++17; plain C array avoids that).
+// Bayer pattern RGGB (unified with the SW dataset).
+//
+// Ordering: tone RM slot wraps the shared baseline core. Low-light binning-
+// demosaic runs on RAW (before precision loss); gain/gamma are the tone
+// stages and never appear inside the baseline core (no duplication,
+// RESEARCH.md de-dup rule).
 
 namespace {
 
 // --- shared baseline-core parameters (12-bit RAW domain) ---
-// BLC recalibration (2026-07-20, approved): real-sensor RAW sweeps put the mAP
-// peak at black level 1~2 for every arm/split; both modes share 2. Evidence:
-// dfxisp_accel.md §2.
+// BLC recalibration (2026-07-20, approved): real-sensor RAW sweeps on the
+// canonical gamma-2.0 pipeline (results/isp-pipeline-recalibration-2026-07-08.md,
+// results/lod-pascal-isp-simulation-2026-07-15.md; SonyNOD 321 + PASCALRAW 321,
+// BLC in {0,1,2,4,8,16}) put the mAP peak at BLC 1~2 for every arm and every
+// split -- the previous 16 (normal) / 8 (low-light) cost up to 5.7x mAP on
+// night data. Both modes now share black level 2; per-mode relaxation
+// (2026-07-03) is superseded since 2 sits at the measured peak of both arms.
 constexpr int BLC_OFFSET12 = 2 << 4;   // black level 2 (8-bit) -> 32 (12-bit), normal mode
 constexpr int BLC_OFFSET12_LOWLIGHT = 2 << 4;   // black level 2 (8-bit) -> 32 (12-bit)
 constexpr int RAW12_MAX = 4095;
@@ -26,17 +93,28 @@ constexpr int GAIN_NORMAL_NUM = 5, GAIN_NORMAL_DEN = 4;      // normal 1.25x
 constexpr int GAIN_LOWLIGHT_NUM = 2, GAIN_LOWLIGHT_DEN = 1;  // low-light 2.0x
 // gamma 2.0 realized exactly as integer sqrt: 255*(v/255)^(1/2) = floor(sqrt(255*v))
 // --- checker ---
-// Checker C1 (deployed 2026-07-20): AUTO -> LOW_LIGHT when dark16 ratio > 0.62.
-// Driver must write dark_pixel_threshold = 256 (= 16<<4 in this raw12 domain).
-// Selection evidence and metrics: dfxisp_accel.md §2.
+// C1 operating point deployed 2026-07-20 (gate 4, checker-status-2026-07-10.md
+// §1/§4): dark16 ratio > 0.62 replaces the 2026-07-02 C0 rule (dark50 > 0.80).
+// C1 dominates C0 on every metric (recall 0.936 vs 0.918, false-trigger 0.089
+// vs 0.125, Youden J 0.847 vs 0.793) with ZERO RTL change: the dark-pixel
+// threshold is the runtime `dark_pixel_threshold` AXI-lite register -- the
+// driver must now write 256 (= 16<<4 in this raw12 domain; dataset pseudo-RAW16
+// equivalent is 16<<8 = 4096) instead of the old dark50 value -- and only this
+// ratio constant changes at compile time. Gate-3 real-sensor validation:
+// SonyNOD recall + PASCALRAW false-trigger (C0 92.9% -> C1 41.8%), see
+// checker-adaptive-tau-realdata-2026-07-13.md / pascalraw-adapter-2026-07-13.md
+// §7. The Schmitt hysteresis band (delta = 2%p) of the C1 spec is driver-side
+// policy state (one mode FF, see tools/scheduler_sim.py); the single-frame
+// rule here stays a pure threshold compare.
 constexpr int DARK_RATIO_PCT = 62;      // AUTO -> LOW_LIGHT when dark pixels > 62%
-// Schmitt band (C1 spec, checker-principles-2026-07-05 principle 5): delta =
-// 2%p around the 62% center -> ENTER LOW_LIGHT above 64%, EXIT below 60%.
-// The asymmetry vs the single-frame verdict (62) is intentional: enter at 64
-// lowers false triggers, exit at 60 keeps recall on already-dark scenes.
-// The mode state itself lives in the static-region RTL block
+// Schmitt band (2026-08-06; checker-principles-2026-07-05 principle 5 /
+// principled-versions adoption): delta = 2%p around the 62% center ->
+// ENTER LOW_LIGHT above 64%, EXIT below 60%. The asymmetry vs the
+// single-frame verdict (62) is intentional: enter at 64 lowers false
+// triggers, exit at 60 keeps recall on already-dark scenes. The mode state
+// itself lives in the static-region RTL block
 // results/pr_controller/checker_hysteresis.v; this core only exports the two
-// band-compare flags per frame (dfxisp_accel.md §7).
+// band-compare flags per frame (see hyst_flags below).
 constexpr int HYST_ENTER_PCT = 64;
 constexpr int HYST_EXIT_PCT = 60;
 
@@ -107,14 +185,15 @@ static int checker_select_mode(const uint16_t* raw, int width, int height, int m
 #pragma HLS LOOP_TRIPCOUNT min=16 max=2073600
         if (raw[i] < dark_pixel_threshold) ++dark;
     }
-    const bool above_enter = dark * 100 > HYST_ENTER_PCT * n;
-    const bool below_exit = dark * 100 < HYST_EXIT_PCT * n;
+    const int dark_pct100 = dark * 100;
+    const bool above_enter = dark_pct100 > HYST_ENTER_PCT * n;
+    const bool below_exit = dark_pct100 < HYST_EXIT_PCT * n;
     hyst_flags = (above_enter ? DFXISP_HYST_ABOVE_ENTER : 0) |
                  (below_exit ? DFXISP_HYST_BELOW_EXIT : 0);
     // The single-frame verdict (Arm2 runtime branch / golden contract) keeps
     // the deployed C1 threshold (62), independent of the Schmitt band edges;
     // the Schmitt state machine consumes the flags outside this core.
-    return (dark * 100 > DARK_RATIO_PCT * n) ? DFXISP_MODE_LOW_LIGHT : DFXISP_MODE_NORMAL;
+    return (dark_pct100 > DARK_RATIO_PCT * n) ? DFXISP_MODE_LOW_LIGHT : DFXISP_MODE_NORMAL;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,10 +356,19 @@ static void run_low_light(const uint16_t* raw, uint32_t* rgb_out, int width, int
 }  // namespace
 
 // -----------------------------------------------------------------------------
-// Standalone per-RM HLS tops: separately synthesizable so each DFX RM candidate
-// gets its own resource/timing numbers. Port lists of the two tops must stay
-// IDENTICAL (same RP slot contract). Background: dfxisp_accel.md §5.
+// Standalone per-RM HLS tops (Stage 5 prep, 2026-07-02): separately synthesizable
+// so each candidate DFX Reconfigurable Module gets its OWN resource/timing
+// numbers, instead of only the sub-instance breakdown inside the unified
+// dfxisp_accel() top (§10 in SPEC.md). Same internal functions as dfxisp_accel()
+// (same translation unit -> can call the anonymous-namespace helpers directly),
+// so behavior/bit-exactness is identical; these are synthesis-only entry points
+// (csynth "synth" flow, no testbench) and are not exercised by make verify.
 // -----------------------------------------------------------------------------
+// Port list matches rm_low_light_tone_top exactly (same arg types/order/count)
+// so the two are valid DFX candidates for the same Reconfigurable Partition
+// slot -- DFX requires identical port lists across RM implementations of one
+// RP (RESEARCH.md §2.3 "동일 downstream 인터페이스 계약"). out_width/out_height
+// always equal width/height here since RM_NORMAL_TONE preserves shape (H x W).
 extern "C" void rm_normal_tone_top(
     const uint16_t* raw_bayer, uint32_t* rgb_out, int width, int height,
     int* out_width, int* out_height) {
@@ -338,9 +426,15 @@ extern "C" void dfxisp_accel(
     int* selected_mode,
     int* selected_rm,
     int* hyst_flags) {
-// depth= only sizes cosim's m_axi BFM memory model (no effect on synthesized
-// RTL); 2048 = headroom over the cumulative cosim address span. Full story:
-// dfxisp_accel.md §6.
+// depth= is a cosim/BFM memory-model sizing hint required for C/RTL cosim's
+// m_axi bus functional model; it does not affect synthesized RTL behavior
+// (real depth is width*height at runtime). depth=1920*1080 (full design
+// envelope) SIGSEGV'd in ENTER_WRAPC (likely wrapc harness stack overflow);
+// depth=1024 got past that but SIGSEGV'd in ENTER_WRAPC_PC (post-check) after
+// all 7 RTL transactions in test_dfxisp_csim.cpp completed successfully --
+// likely too small for the *cumulative* address span cosim's m_axi BFM uses
+// across all calls in one session (7 calls x up to 256px each ~ 1800). Sized
+// with headroom above that for the current fixture set.
 #pragma HLS INTERFACE m_axi port=raw_bayer offset=slave bundle=gmem0 depth=2048
 #pragma HLS INTERFACE m_axi port=rgb_out offset=slave bundle=gmem1 depth=2048
 #pragma HLS INTERFACE s_axilite port=raw_bayer bundle=control

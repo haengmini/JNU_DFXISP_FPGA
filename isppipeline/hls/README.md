@@ -107,6 +107,17 @@ must state which category it belongs to.
 
 ## Ponytail review record (2026-08-06)
 
+**Pass 2 (module scope: checker / default_ISP / lowlight_ISP), 4 findings — all
+cut:** default_ISP's AWB green gain (reference channel, so always 256 = an
+identity op), the checker's thrice-repeated `dark*100`, `sigma_clip`'s argument
+repacking, and `checker_hysteresis`'s fixed 16-bit dwell counter (now sized from
+the parameter). Re-synthesis: default_ISP **FF 8,803 → 8,794**, LUT/DSP/timing
+unchanged — the synthesiser had already folded ×256>>8, so the saving was
+pipeline registers. All 4 golden gates and both xsim benches re-passed with
+identical numbers.
+
+**Pass 1 (whole-diff scope):**
+
 The `/ponytail-review` over-engineering gate was applied to the three-arm
 addition (11 findings, −195 lines available). **Only the triplicated golden-CSV
 parser was cut** — replaced by the header-driven loader `tests/golden_csv.hpp`

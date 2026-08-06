@@ -29,13 +29,15 @@ module checker_hysteresis #(
     output reg  mode            // stable mode: 0 = NORMAL, 1 = LOW_LIGHT
 );
 
-    reg [15:0] dwell_cnt;
+    // Counter width follows the parameter instead of a fixed 16 bits.
+    localparam integer DWELL_W = (DWELL_FRAMES < 2) ? 1 : $clog2(DWELL_FRAMES + 1);
+    reg [DWELL_W-1:0] dwell_cnt;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             mode       <= 1'b0;   // reset into NORMAL (matches the RM_NORMAL default config)
             pr_trigger <= 1'b0;
-            dwell_cnt  <= 16'd0;
+            dwell_cnt  <= {DWELL_W{1'b0}};
         end else begin
             // Release the request as soon as the controller acknowledges by
             // going busy. pr_controller samples trigger only in S_IDLE, so
@@ -48,16 +50,16 @@ module checker_hysteresis #(
             // reconfiguration is in flight (those frames were processed by
             // the outgoing RM anyway).
             if (flags_vld && !pr_trigger && !pr_busy) begin
-                if (dwell_cnt != 16'd0) begin
-                    dwell_cnt <= dwell_cnt - 16'd1;
+                if (dwell_cnt != {DWELL_W{1'b0}}) begin
+                    dwell_cnt <= dwell_cnt - 1'b1;
                 end else if (!mode && above_enter) begin
                     mode       <= 1'b1;
                     pr_trigger <= 1'b1;
-                    dwell_cnt  <= DWELL_FRAMES[15:0];
+                    dwell_cnt  <= DWELL_FRAMES[DWELL_W-1:0];
                 end else if (mode && below_exit) begin
                     mode       <= 1'b0;
                     pr_trigger <= 1'b1;
-                    dwell_cnt  <= DWELL_FRAMES[15:0];
+                    dwell_cnt  <= DWELL_FRAMES[DWELL_W-1:0];
                 end
                 // In-band frames (neither flag set) change nothing — this is
                 // the Schmitt property the single-threshold checker lacked.

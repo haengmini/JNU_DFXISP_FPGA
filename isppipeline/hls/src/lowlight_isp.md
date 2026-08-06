@@ -179,7 +179,7 @@ reported alongside any result.
 |---|---:|---:|---:|---:|---:|
 | **`rm_lowlight_isp_top`** (v2 low-light, **real binning**) | **11** | **20** | **7,555** | **12,826** | 3.650 ns |
 | (reference) same arm, subsample era | 11 | 17 | 6,447 | 10,848 | 3.650 ns |
-| `rm_default_isp_top` (v2 normal) | 4 | 28 | 8,803 | 12,659 | 3.650 ns |
+| `rm_default_isp_top` (v2 normal) | 4 | 28 | 8,794 | 12,659 | 3.650 ns |
 | `rm_low_light_tone_top` (v1 low-light) | 8 | 9 | 3,243 | 4,204 | 3.650 ns |
 | `rm_normal_tone_top` (v1 normal) | 4 | 12 | 3,797 | 5,202 | 3.650 ns |
 

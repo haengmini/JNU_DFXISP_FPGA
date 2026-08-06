@@ -138,8 +138,10 @@ static void demosaic_rggb12(const uint16_t* raw, int width, int height, int x, i
 // (1-frame lag, double-buffered); we accumulate this frame's Bayer-site means
 // instead -- same gray-world statistic, no frame buffer, no lag. Cost: one
 // extra read pass over raw_bayer (default_isp.md §4).
+// Green is the reference channel, so only the R and B gains are returned --
+// a green gain would be 256 (identity) by construction.
 static void awb_gains_q8(const uint16_t* raw, int width, int height,
-                         int& gain_r_q8, int& gain_g_q8, int& gain_b_q8) {
+                         int& gain_r_q8, int& gain_b_q8) {
     unsigned long long sum_r = 0, sum_g = 0, sum_b = 0;
     unsigned long long cnt_r = 0, cnt_g = 0, cnt_b = 0;
 
@@ -167,7 +169,6 @@ static void awb_gains_q8(const uint16_t* raw, int width, int height,
     const int mean_g = cnt_g ? static_cast<int>(sum_g / cnt_g) : 0;
     const int mean_b = cnt_b ? static_cast<int>(sum_b / cnt_b) : 0;
 
-    gain_g_q8 = 256;  // green is the reference channel
     gain_r_q8 = (mean_r > 0 && mean_g > 0)
                     ? clamp_i((mean_g * 256) / mean_r, AWB_GAIN_MIN_Q8, AWB_GAIN_MAX_Q8)
                     : 256;
@@ -194,9 +195,9 @@ static inline uint8_t quantize_gamma(int v12) {
 
 static void run_default_isp(const uint16_t* raw_bayer, uint32_t* rgb_out,
                             int width, int height, int awb_mode) {
-    int awb_r = 256, awb_g = 256, awb_b = 256;
+    int awb_r = 256, awb_b = 256;
     if (awb_mode == DEFAULT_ISP_AWB_ON) {
-        awb_gains_q8(raw_bayer, width, height, awb_r, awb_g, awb_b);
+        awb_gains_q8(raw_bayer, width, height, awb_r, awb_b);
     }
 
     for (int y = 0; y < height; ++y) {
@@ -207,8 +208,7 @@ static void run_default_isp(const uint16_t* raw_bayer, uint32_t* rgb_out,
             demosaic_rggb12(raw_bayer, width, height, x, y, r12, g12, b12);  // (1)(2)(3)
 
             r12 = clamp_i((r12 * awb_r) >> 8, 0, RAW12_MAX);                 // (4)
-            g12 = clamp_i((g12 * awb_g) >> 8, 0, RAW12_MAX);
-            b12 = clamp_i((b12 * awb_b) >> 8, 0, RAW12_MAX);
+            b12 = clamp_i((b12 * awb_b) >> 8, 0, RAW12_MAX);   // g12: reference channel
 
             const int rc = ccm_channel(0, r12, g12, b12);                    // (5)
             const int gc = ccm_channel(1, r12, g12, b12);

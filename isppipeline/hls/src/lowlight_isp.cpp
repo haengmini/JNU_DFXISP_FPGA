@@ -418,11 +418,9 @@ static inline int ccm_channel(int row, int r12, int g12, int b12) {
 // survive while flat-region noise is suppressed. The centre is always included,
 // hence count >= 1.
 static inline uint8_t sigma_clip(const uint8_t plane[3][MAX_BINNED_W],
-                                 int row_up, int row_mid, int row_dn,
-                                 int bw, int x) {
+                                 const int rows[3], int bw, int x) {
 #pragma HLS INLINE
-    const int rows[3] = {row_up, row_mid, row_dn};
-    const int center = plane[row_mid][x];
+    const int center = plane[rows[1]][x];
     int total = 0, count = 0;
     for (int dy = 0; dy < 3; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
@@ -470,16 +468,16 @@ static void run_lowlight_isp(const uint16_t* raw, uint32_t* rgb_out,
         const int emit = by - 1;
         if (emit >= 0 && emit < bh) {
             const int mid = emit % 3;
-            const int up = (emit > 0) ? (emit - 1) % 3 : mid;
-            const int dn = (emit + 1 < bh) ? (emit + 1) % 3 : mid;
+            const int rows[3] = {(emit > 0) ? (emit - 1) % 3 : mid, mid,
+                                 (emit + 1 < bh) ? (emit + 1) % 3 : mid};
             for (int bx = 0; bx < bw; ++bx) {
 #pragma HLS PIPELINE II=1
 #pragma HLS LOOP_TRIPCOUNT min=2 max=960
                 uint8_t r, g, b;
                 if (denoise_mode == LOWLIGHT_ISP_DENOISE_ON) {
-                    r = sigma_clip(pr, up, mid, dn, bw, bx);
-                    g = sigma_clip(pg, up, mid, dn, bw, bx);
-                    b = sigma_clip(pb, up, mid, dn, bw, bx);
+                    r = sigma_clip(pr, rows, bw, bx);
+                    g = sigma_clip(pg, rows, bw, bx);
+                    b = sigma_clip(pb, rows, bw, bx);
                 } else {
                     r = pr[mid][bx];
                     g = pg[mid][bx];

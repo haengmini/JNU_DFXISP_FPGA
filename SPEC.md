@@ -455,7 +455,7 @@ the same 6-argument DFX contract, so it drops into the same RP slot).
 Where `RM_NORMAL_TONE` corrects **after** demosaic in the RGB domain with
 fixed WB and an identity CCM, default_ISP follows Vitis: **Bayer-domain
 BLC/gain → demosaic → adaptive AWB → real CCM**. Measured csynth: LUT 12,659
-/ DSP 28 / FF 8,803 (2.43× the LUT of RM_NORMAL_TONE's 5,202/12/3,797, with
+/ DSP 28 / FF 8,794 (2.43× the LUT of RM_NORMAL_TONE's 5,202/12/3,797, with
 identical 3.650 ns timing). **Not a deployed arm yet** — mAP unevaluated,
 post-route unmeasured, and promotion to `RM_NORMAL` is undecided (origin
 `STRATEGY.md` open question #4). Details: `src/default_isp.md`.

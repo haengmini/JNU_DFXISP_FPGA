@@ -98,8 +98,16 @@ flat-tempdir workaround.
 
 | top | BRAM_18K | DSP | FF | LUT | Est. period |
 |---|---:|---:|---:|---:|---:|
-| **`rm_default_isp_top`** (default_ISP) | 4 | **28** | **8,803** | **12,659** | 3.650 ns |
+| **`rm_default_isp_top`** (default_ISP) | 4 | **28** | **8,794** | **12,659** | 3.650 ns |
 | `rm_normal_tone_top` (RM_NORMAL_TONE) | 4 | 12 | 3,797 | 5,202 | 3.650 ns |
+
+> **Updated after the 2026-08-06 ponytail review:** the AWB green gain is
+> always 256 by construction (green is the reference channel), so its
+> out-param, multiply and clamp were all identity — removing them and
+> re-synthesising gives **FF 8,803 → 8,794 (−9)** with LUT, DSP and timing
+> unchanged. The synthesiser had already folded ×256>>8 into a shift, so the
+> saving was pipeline registers, not a multiplier. A case study in source
+> tidiness not automatically translating into silicon gain.
 
 **Reading:** default_ISP costs **2.43× the LUT and 2.33× the DSP** of the
 existing normal arm. The increase is structural — (a) the AWB statistics

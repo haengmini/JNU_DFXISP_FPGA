@@ -1,76 +1,33 @@
 #include "default_isp.hpp"
+#include "golden_csv.hpp"
 
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
 
 static uint8_t red(uint32_t p) { return uint8_t((p >> 16) & 0xff); }
 static uint8_t green(uint32_t p) { return uint8_t((p >> 8) & 0xff); }
 static uint8_t blue(uint32_t p) { return uint8_t(p & 0xff); }
 
-struct GoldenCase {
-    std::string name;
-    int in_w = 0, in_h = 0, awb_mode = 0, out_w = 0, out_h = 0;
-    std::vector<uint16_t> raw;
-    std::vector<uint32_t> expected;
-};
-
 static void check_golden_vectors(const char* path) {
-    std::ifstream f(path);
-    if (!f) {
+    const std::vector<GoldenCase> cases = load_golden_csv(path);
+    if (cases.empty()) {
         std::cout << "default_ISP golden vector compare skipped (" << path << " not found)\n";
         return;
-    }
-    std::string line;
-    std::getline(f, line);  // header
-    std::vector<GoldenCase> cases;
-    while (std::getline(f, line)) {
-        if (line.empty()) continue;
-        std::stringstream ss(line);
-        std::vector<std::string> col;
-        std::string cell;
-        while (std::getline(ss, cell, ',')) col.push_back(cell);
-        assert(col.size() == 9);
-
-        const std::string& name = col[0];
-        if (cases.empty() || cases.back().name != name) {
-            GoldenCase c;
-            c.name = name;
-            c.in_w = std::stoi(col[1]);
-            c.in_h = std::stoi(col[2]);
-            c.awb_mode = std::stoi(col[3]);
-            c.out_w = std::stoi(col[4]);
-            c.out_h = std::stoi(col[5]);
-            c.raw.assign(c.in_w * c.in_h, 0);
-            c.expected.assign(c.out_w * c.out_h, 0);
-            cases.push_back(c);
-        }
-        GoldenCase& c = cases.back();
-        const std::string& kind = col[6];
-        const int idx = std::stoi(col[7]);
-        if (kind == "raw") {
-            assert(idx >= 0 && idx < c.in_w * c.in_h);
-            c.raw[idx] = static_cast<uint16_t>(std::stoul(col[8]));
-        } else {
-            assert(idx >= 0 && idx < c.out_w * c.out_h);
-            c.expected[idx] = static_cast<uint32_t>(std::stoul(col[8], nullptr, 0));
-        }
     }
 
     int checked = 0;
     for (const GoldenCase& c : cases) {
-        std::vector<uint32_t> got(c.in_w * c.in_h, 0);
+        const int in_w = c.param("in_w"), in_h = c.param("in_h");
+        const int exp_w = c.param("out_w"), exp_h = c.param("out_h");
+        std::vector<uint32_t> got(in_w * in_h, 0);
         int out_w = 0, out_h = 0;
-        default_isp(c.raw.data(), got.data(), c.in_w, c.in_h, c.awb_mode, &out_w, &out_h);
+        default_isp(c.raw.data(), got.data(), in_w, in_h, c.param("awb_mode"), &out_w, &out_h);
         // shape-preserving pipeline (no Policy A halving in this arm)
-        assert(out_w == c.out_w && out_h == c.out_h);
-        assert(out_w == c.in_w && out_h == c.in_h);
-        for (int i = 0; i < c.out_w * c.out_h; ++i) {
+        assert(out_w == exp_w && out_h == exp_h);
+        assert(out_w == in_w && out_h == in_h);
+        for (int i = 0; i < exp_w * exp_h; ++i) {
             if (got[i] != c.expected[i]) {
                 std::cerr << "default_ISP golden mismatch case=" << c.name << " index=" << i
                           << " expected=0x" << std::hex << c.expected[i]

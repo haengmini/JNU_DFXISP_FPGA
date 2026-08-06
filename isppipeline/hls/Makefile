@@ -1,5 +1,5 @@
 CXX ?= g++
-CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror -Wno-unknown-pragmas -Iinclude
+CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror -Wno-unknown-pragmas -Iinclude -Itests
 PYTHON ?= python3
 VITIS_HLS ?= vitis_hls
 DFXISP_HLS_FLOW ?= csim
@@ -107,9 +107,6 @@ default-isp-verify: default-isp-golden default-isp-csim
 # lowlight_ISP: proposal low-light arm (v2). Shares default_ISP's correction
 # backbone; specialisation = 2x2 binning + 2.0x upstream gain + GAT/VST tone
 # + edge-preserving denoise. Additive; RM_LOW_LIGHT_TONE is untouched.
-# NOTE (this extracted repo): lowlight-isp-golden needs the origin repo's
-# tools/gen_lowlight_isp_golden.py; lowlight-isp-csim works against the
-# committed golden CSV.
 lowlight-isp-golden:
 	$(PYTHON) tools/gen_lowlight_isp_golden.py --out $(LOWLIGHT_ISP_GOLDEN_CSV)
 

@@ -105,6 +105,22 @@ must state which category it belongs to.
 | `scheduler_sim.py` / `scheduler_sweep.py` | **policy simulation** | hysteresis/temporal/min-dwell scheduler trade-off experiments. Uses synthetic luminance sequences — not a validation of the checker implementation itself |
 | `internal_edge_smoke.py` | **regression test** | 1x1–8x8 tiny/odd grid smoke + demosaic boundary-clamp regression tests (`make py-verify`). Checks the independent demosaic copies in both `baseline_isp_pipeline.py` and `checker.py` (before 2026-07-08: `isp_pipeline_ver1.py`) |
 
+## Ponytail review record (2026-08-06)
+
+The `/ponytail-review` over-engineering gate was applied to the three-arm
+addition (11 findings, −195 lines available). **Only the triplicated golden-CSV
+parser was cut** — replaced by the header-driven loader `tests/golden_csv.hpp`
+(−134 lines). The other two findings are **kept, with the reason recorded**:
+
+- **Duplicated helpers/constants in `src/`** (`clamp_i`, `pack_rgb`, `bin_dim`,
+  `CCM_Q8`, `GAMMA2_LUT`; ~45 lines): HLS synthesises each arm as its own
+  translation unit, so hoisting them into a header **changes nothing in
+  silicon** — zero gain for a refactor that touches three bit-exact golden
+  contracts. Rejected at rung 1 of the ladder ("does this need to be done?").
+- **Shared constants/helpers across the two Python goldens** (~30 lines):
+  sharing on the Python side while C++ stays duplicated makes the canonical
+  source **asymmetric**, and that confusion costs more than the saving.
+
 ## Running the local C-sim
 
 ```bash

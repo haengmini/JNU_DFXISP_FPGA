@@ -39,7 +39,8 @@ isppipeline/hls/
   scripts/vitis_hls.tcl          # HLS csynth/cosim flow
   scripts/dfx/                   # Vivado DFX flow (dfx_flow.tcl etc.)
   results/pr_controller/         # fabric trigger chain: Schmitt mode arbiter (checker_hysteresis.v)
-                                 #   + PR controller RTL + unit/end-to-end TBs (xsim PASS)
+                                 #   + DFXC adapter + latency probe + TBs (xsim PASS)
+                                 #   (custom pr_controller: archived, results/archive/)
   results/icap_sim/              # ICAP PR-latency simulation TB
 data/                            # real-RAW samples (see "Datasets" below)
 ```
@@ -137,10 +138,10 @@ In order:
    `dfxc_adapter.md`: generate/configure the IP (1 VS, 2 RMs, DDR bitstream
    table, ICAP), add the DFX Decoupler, confirm generated port names, wire
    the re-synthesized `hyst_flags` ports and `rm_ap_idle`, decide the
-   post-swap `ap_start` policy. The hand-written `pr_controller.v` (+
-   `checker_to_pr_tb.v`) is kept for latency characterization only — its
-   caveats (stale `NWORDS`, 2-cycles-per-word, ICAP rated 100 MHz) apply to
-   that instrument, not the product.
+   post-swap `ap_start` policy. Latency measurement: the IP has no built-in
+   counter — `pr_latency_probe.v` counts the IP's handshake boundaries
+   (drain, end-to-end swap) instead. The hand-written `pr_controller.v` is
+   **archived** (`results/archive/pr_controller/`, retirement note inside).
 2. PS/DDR integration (Vivado Block Design).
 3. Clock/reset pin assignment for the new pblock + WNS re-verification.
 4. (Optional) investigate the partition-pin count drop 15 → 3 (recorded as

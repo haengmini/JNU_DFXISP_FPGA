@@ -60,9 +60,11 @@ dfxisp_accel (HLS core)                 checker_hysteresis.v (this, static regio
 > `dfxc_trigger_adapter.v` bridges this block to the IP with the same
 > request/ack semantics (`checker_hysteresis` itself is unchanged), and
 > `checker_to_dfxc_tb.v` verifies the chain against a PG374 contract model
-> (xsim PASS). See `dfxc_adapter.md`. Items 3–5 below then apply to the
-> characterization path (custom `pr_controller.v`) only; the production
-> checklist lives in `dfxc_adapter.md`.
+> (xsim PASS). See `dfxc_adapter.md`. The custom `pr_controller.v` was
+> subsequently **archived** (`../archive/pr_controller/`) — latency
+> measurement is handled by `pr_latency_probe.v` on the IP's handshake
+> signals. Items 3–5 below are retained as history of the custom-path plan;
+> the live checklist is in `dfxc_adapter.md`.
 
 ## What Stage 6 still owes on top of this
 

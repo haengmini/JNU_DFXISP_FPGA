@@ -38,6 +38,20 @@ module checker_to_dfxc_tb;
         .vs_rm_decouple(vs_rm_decouple),
         .rm_ap_idle(rm_ap_idle));
 
+    wire [31:0] drain_cycles, swap_cycles;
+    wire meas_valid;
+    integer meas_count = 0;
+    always @(posedge clk) if (meas_valid) meas_count = meas_count + 1;
+
+    pr_latency_probe probe (
+        .clk(clk), .rst_n(rst_n),
+        .trigger_seen(|vs_hw_triggers),
+        .vs_rm_shutdown_req(vs_rm_shutdown_req),
+        .vs_rm_shutdown_ack(vs_rm_shutdown_ack),
+        .vs_rm_decouple(vs_rm_decouple),
+        .drain_cycles(drain_cycles), .swap_cycles(swap_cycles),
+        .meas_valid(meas_valid));
+
     always #2.5 clk = ~clk;
 
     // --- DFXC behavioral model (PG374 sequence) ---
@@ -108,6 +122,19 @@ module checker_to_dfxc_tb;
         if (swap_count !== 2 || mode !== 1'b0) begin
             $display("FAIL: reverse swap incomplete"); $fatal;
         end
+
+        // Latency probe: one measurement per swap; plausibility bounds only
+        // (the ~5-cycle modeled drain window counts as 4 posedges from the
+        // negedge-driven stimulus), end-to-end >= the modeled program time.
+        if (meas_count !== 2) begin
+            $display("FAIL: probe measured %0d swaps (exp 2)", meas_count); $fatal;
+        end
+        if (drain_cycles < 4 || swap_cycles < PROG_CYCLES) begin
+            $display("FAIL: implausible probe counts drain=%0d swap=%0d",
+                     drain_cycles, swap_cycles); $fatal;
+        end
+        $display("probe: drain=%0d cycles, swap=%0d cycles (last swap)",
+                 drain_cycles, swap_cycles);
 
         $display("checker_to_dfxc_tb PASS: 2 swaps via DFXC contract model, drain enforced, no PS in the loop");
         $finish;

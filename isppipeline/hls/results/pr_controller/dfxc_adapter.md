@@ -62,7 +62,11 @@ real IP; re-run the chain as an IP-integrated simulation in Stage 6.
    logic vs PS) — still an open decision.
 5. PS keeps observation only (AXI4-Lite: `selected_mode`, IP status
    registers).
-6. Characterization runs (paper numbers) may still use `pr_controller.v` in
-   a fabric-only harness — its known caveats (stale `NWORDS`,
-   2-cycles-per-word, 100 MHz ICAP clock) then apply to the instrument, not
-   the product.
+6. Latency measurement: the IP has **no built-in latency counter** (status/
+   error registers only), but its handshake signals bound every phase —
+   `pr_latency_probe.v` (same directory) counts drain (shutdown req→ack)
+   and end-to-end swap (trigger→decouple release); verified inside
+   `checker_to_dfxc_tb.v` (probe: drain=4, swap=38 cycles on the contract
+   model). On the board, read it via ILA or latch into status registers.
+   The custom `pr_controller.v` is therefore **archived**
+   (`../archive/pr_controller/`) — no longer needed even as an instrument.

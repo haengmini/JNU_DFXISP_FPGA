@@ -52,8 +52,10 @@ Deployed 2026-07-20 (gate 4). The **dark16 ratio > 0.62** rule replaces the
 
 Real-sensor validation (gate 3): SonyNOD recall + PASCALRAW false-trigger
 rate C0 92.9% → C1 41.8%. The Schmitt hysteresis band (Δ = 2 %p) of the C1
-spec is driver-side policy state (one mode flip-flop); the single-frame rule
-here stays a pure threshold compare.
+spec was originally left as driver-side policy; since 2026-08-06 it is
+implemented in fabric (`results/pr_controller/checker_hysteresis.v`, fed by
+the `hyst_flags` export — §7). The single-frame rule here stays a pure
+threshold compare.
 
 ## 3. The two adversarial-review fixes (2026-07-02)
 

@@ -38,7 +38,8 @@ isppipeline/hls/
   tests/                         # csim testbenches + golden vector CSVs (committed)
   scripts/vitis_hls.tcl          # HLS csynth/cosim flow
   scripts/dfx/                   # Vivado DFX flow (dfx_flow.tcl etc.)
-  results/pr_controller/         # PR controller RTL + TB (target of the Stage 6 prerequisites)
+  results/pr_controller/         # fabric trigger chain: Schmitt mode arbiter (checker_hysteresis.v)
+                                 #   + PR controller RTL + unit/end-to-end TBs (xsim PASS)
   results/icap_sim/              # ICAP PR-latency simulation TB
 data/                            # real-RAW samples (see "Datasets" below)
 ```
@@ -50,8 +51,16 @@ repo — every script works verbatim.
 Long design-background comments from the sources have been **split into
 same-named `.md` notes next to each file** (`src/dfxisp_accel.md`,
 `include/dfxisp_accel.md`, `results/pr_controller/pr_controller.md`,
+`results/pr_controller/checker_hysteresis.md`,
 `results/icap_sim/icap_pr_latency_tb.md`). The code keeps only a short
 summary plus a pointer to the note.
+
+**Mode switching is fabric-internal** (2026-08-06): the HLS checker exports
+per-frame Schmitt band flags (`hyst_flags`, ap_vld wire), and
+`checker_hysteresis.v` owns the mode state and drives
+`pr_controller.trigger` directly — the PS only observes. The full chain is
+simulated in `checker_to_pr_tb.v` (xsim PASS). See
+`checker_hysteresis.md` for the protocol and the remaining Stage 6 wiring.
 
 ## Datasets — the input is real RAW (not pseudo-RAW)
 

@@ -2,9 +2,18 @@
 type: spec
 title: "DFXISP system specification (input datasets → output)"
 project: DFXISP
-version: 1.2
+version: 1.3
 created: 2026-07-02
-updated: 2026-08-04 — (a) per-mode WB split rejected (§4, §11.11): the diagnosis
+updated: 2026-08-06 — Schmitt hysteresis moved into fabric (this repo):
+  `dfxisp_accel` now exports per-frame band flags (`hyst_flags`, ap_vld wire,
+  11th argument; enter 62% / exit 60%) and the new static-region module
+  `results/pr_controller/checker_hysteresis.v` owns the mode state and drives
+  `pr_controller.trigger` directly (request/ack, no PS in the decision path) —
+  implementing the 2026-07-03 adoption that had stayed unimplemented; the
+  earlier "driver-side policy" wording (§3.1, §7) described that interim state
+  and is superseded. End-to-end trigger chain verified in xsim
+  (`checker_to_pr_tb.v`). Golden contract unchanged (csim bit-exact PASS).
+  Previous update (2026-08-04): (a) per-mode WB split rejected (§4, §11.11): the diagnosis
   that the deployed shared WB is mistuned for low light was confirmed by
   measurement, but mAP does not respond, so no split
   (`results/lowlight-wb-mode-split-2026-08-03.md`). (b) RP-boundary wording
@@ -210,12 +219,18 @@ AUTO       -> dark_ratio = count(dark) / (W*H)
   keeps its **cost-neutral property (C_miss ≈ C_FA) under the oracle
   labels**, so the conclusion is **no re-tuning needed**. Details:
   `results/checker-oracle-label-gate2-2026-07-20.md`.
-- **Hysteresis (sequence level):** absent from the single-frame entry.
-  Scene-level stabilization (N stable frames, hysteresis band, min-dwell)
-  belongs to the scheduler (`tools/scheduler_sim.py`/`scheduler_sweep.py`).
-  Recommended parameters (measured): narrow band + temporal_N=3
-  (mismatch 0.015, thrashing 0). The C1 spec's Schmitt δ=2%p hysteresis is
-  driver-side policy (outside the repo, one mode flip-flop).
+- **Hysteresis (scene level) — in fabric since 2026-08-06:** the
+  single-frame entry stays stateless, but it now exports two Schmitt band
+  compares per frame (`hyst_flags`: above-enter 62% / below-exit 60%,
+  δ=2%p) as an ap_vld wire, and the static-region module
+  `results/pr_controller/checker_hysteresis.v` owns the mode flip-flop,
+  min-dwell (`DWELL_FRAMES`, default 1), and the `pr_trigger` request/ack
+  to the PR controller — no PS in the decision path (the PS only observes
+  `selected_mode` via AXI4-Lite). This implements the 2026-07-03 adoption;
+  the earlier "driver-side policy" wording described the unimplemented
+  interim state. History: scheduler-level simulation
+  (`tools/scheduler_sim.py`, origin repo) measured narrow band +
+  temporal_N=3 → mismatch 0.015, thrashing 0.
 
 ### 3.2 ② Baseline ISP core (shared code path, mode-specific BLC) — ver1
 
@@ -395,11 +410,16 @@ extern "C" void dfxisp_accel(
     int*            out_width,     // output metadata (individual scalar pointers)
     int*            out_height,
     int*            selected_mode,
-    int*            selected_rm);
+    int*            selected_rm,
+    int*            hyst_flags);   // Schmitt band flags (ap_vld wire, 2026-08-06)
 ```
 
 AXI: `raw_bayer`/`rgb_out` = `m_axi` (gmem0/gmem1); the remaining scalar
 arguments, the 4 metadata outputs, and `return` = `s_axilite` (control).
+`hyst_flags` is the exception: an `ap_vld` fabric wire pair
+(`hyst_flags[31:0]` + `hyst_flags_ap_vld`, one pulse per completed frame)
+feeding `checker_hysteresis.v` directly — not an s_axilite register
+(§3.1; bit 0 = above-enter 62%, bit 1 = below-exit 60%).
 
 ### 6.2 Golden vector CSV format (verification contract)
 
@@ -418,10 +438,10 @@ Header: `case,in_w,in_h,mode,threshold,out_w,out_h,sel_mode,sel_rm,kind,idx,val`
 | Target device | ZCU104, `xczu7ev-ffvc1156-2-e` |
 | Synthesis tool | Vitis HLS 2024.1 |
 | Clock target | 5.0 ns (200 MHz) |
-| static region | AXI/control wrapper, checker/mode FSM, DFX/PR controller, output/metadata packer (**the baseline ISP core is NOT static** — see the RP-boundary row below) |
+| static region | AXI/control wrapper, checker/mode FSM, Schmitt mode arbiter (`checker_hysteresis.v`, 2026-08-06), DFX/PR controller, output/metadata packer (**the baseline ISP core is NOT static** — see the RP-boundary row below) |
 | RM slot (reconfigurable) | RM_NORMAL_TONE / RM_LOW_LIGHT_TONE (mutually exclusive, identical port signature = the DFX contract) |
 | **RP boundary (as-built, important)** | The synthesized RP (`rm_normal_tone_top`/`rm_low_light_tone_top`) wraps **the full per-mode pipeline demosaic→BLC→WB→tone, not just tone**. `apply_blc_wb12()` is shared **only at the source level** and is duplicated per RM in silicon. 3 partition pins. Evidence: `results/design-limitations-2026-07-03.md` §4.3, `deliverables/verilog/rm_*_tone_top/`, `results/dfx-reimplementation-2026-08-01.md`. A finer split (making the baseline core a genuinely static module) **has not been attempted** |
-| Switch policy | per scene (not per frame), hysteresis checker |
+| Switch policy | per scene (not per frame): fabric Schmitt δ=2%p + min-dwell in `checker_hysteresis.v` → `pr_controller.trigger` request/ack; PS observes only (§3.1) |
 | Reconfiguration latency | theoretical drain+ICAP+warm-up breakdown: **peak 1.72 ms / typical 6.87 ms** (spec-derived, not board-measured). Details `results/pr-latency-breakdown-2026-07-02.md`. Driver/FSM overhead is TODO (board) |
 
 **Experiment arms:** Arm1 (static baseline + normal tone) / Arm2

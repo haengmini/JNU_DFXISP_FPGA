@@ -148,7 +148,8 @@ extern "C" void dfxisp_accel(
     int* out_width,                // output width of the selected RM
     int* out_height,               // output height of the selected RM
     int* selected_mode,            // resolved mode (AUTO resolution)
-    int* selected_rm);             // selected tone RM
+    int* selected_rm,              // selected tone RM
+    int* hyst_flags);              // Schmitt band flags (ap_vld fabric wire, 2026-08-06)
 ```
 
 Why the metadata is **four separate scalar output pointers** instead of one
@@ -163,9 +164,13 @@ post-completion read-back registers in Vitis HLS.
 partitioned along the intended static/RM boundary:
 
 - `checker_select_mode()` — static-region scene checker. Under `AUTO`
-  decides NORMAL/LOW_LIGHT from the dark-pixel ratio. Scene-level hysteresis
-  belongs to the sequence scheduler (RESEARCH §5.2), not to this
-  single-frame C-sim entry.
+  decides NORMAL/LOW_LIGHT from the dark-pixel ratio, and (2026-08-06)
+  additionally exports the two Schmitt band compares (`hyst_flags`:
+  above-enter 62% / below-exit 60%) per frame. The scene-level hysteresis
+  state itself lives in the static-region RTL module
+  `results/pr_controller/checker_hysteresis.v`, which drives the PR
+  controller trigger directly — this single-frame C-sim entry stays
+  stateless (golden contract unchanged).
 - `baseline_core12()` / `apply_blc_wb12()` — **shared static** baseline core
   (ver1). Performs BLC + WB (Q8 channel gains) + CCM (identity) **in
   12-bit** (the final >>4 happens in tone). **No gain/gamma.** The normal
@@ -230,6 +235,12 @@ ignored by the local g++ build.
    `results/stage4-hw-synthesis-2026-07-02.md`. Arm1/Arm3 and
    power/PR-latency still TODO (needs the Vivado DFX floorplan +
    implementation).
+5. **(Done in simulation, 2026-08-06)** fabric-internal mode switching:
+   `checker_hysteresis.v` consumes the new `hyst_flags` ap_vld wires and
+   drives `pr_controller.trigger` (request/ack) — end-to-end xsim PASS
+   (`checker_to_pr_tb.v`). Remaining wiring (real `hyst_flags` RTL ports
+   after re-synthesis, `drain_ready` ← RM `ap_idle`, ICAPE3) is Stage 6 —
+   see `checker_hysteresis.md`.
 
 ## C-synthesis / co-sim execution notes (Vitis HLS 2024.1)
 

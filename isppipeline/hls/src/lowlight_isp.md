@@ -162,56 +162,66 @@ the denoise may shrink, which **raises the priority of the denoise ablation**
 | `BLC_LEVEL12` / `BLC_MUL_Q8` | 32 / 258 | inherited from the deployed value; **re-sweep needed** after GAT (§2.1 prediction) |
 | `EXPOSURE_GAIN_Q8` | 512 (2.0×) | inherited from v1; not swept since moving upstream |
 | `WB_R/G/B_Q8` | 286/256/307 | confirmed non-lever — fixed |
-| **`A_Q8` (a)** | **1202 (a = 4.694 DN)** | ✅ **measured on the target sensor** (Sony RX100 VII, ISO 6400), §4.1 |
-| **`B_DN2` (b)** | **50 (sigma_read = 7.1 DN)** | ✅ measured, but **uncertain** (per-site 6–85); curve impact ≤7 LSB, §4.1 |
-| `DENOISE_SIGMA` | **11** (≈2.4 sigma) | tied to the calibration — measured sigma_VST = 4.56 (it was 5 when sigma_VST was estimated at 2.1) |
+| **`A_Q8` (a)** | **4065 (a = 15.878 DN)** | ✅ **measured on the evaluation split itself** (split_nod, 91 ISO-6400 frames), §4.1 |
+| **`B_DN2` (b)** | **746 (sigma_read = 27.3 DN)** | ✅ fit **cross-checked against raw pixels**, §4.1 |
+| `DENOISE_SIGMA` | **21** (≈2.4 sigma) | tied to the calibration — sigma_VST = 8.89. Has moved twice (5 → 11 → 21); re-derive whenever a/b change |
 | soft-knee | **not implemented** | measured saturation ≤ 2.13%, so no evidence justifies it; a LUT-only change if wanted later |
 
-### 4.1 Calibration (2026-08-06) — **completed on the target sensor**
+### 4.1 Calibration (2026-08-06) — **settled on the evaluation split itself**
 
 `tools/calibrate_noise_model.py` (origin repo) runs single-image photon
 transfer: 8×8 blocks → 2nd-percentile variance per brightness bin → χ² bias
 correction → linear fit.
 
-**Final: 16 Sony RX100 VII original ARWs** (RAW-NOD, ISO 6400, 1/100 s, night)
-— the target sensor measured in the target condition. Fitted in the 14-bit
-sensor domain (pedestal 800 subtracted): **a = 17.92 DN, b = 734 DN²,
-R² = 0.94** (per-site R² 0.91–0.96). Converted to this 12-bit pipeline domain
-by the shift8 scale s = 4080/15580:
+**Canonical: the 91 ISO-6400 frames of `data/split_nod`** — measured on the
+originals of the very split used for evaluation (split_nod ships `raw_arw`
+alongside; re-converting ARW→shift8 reproduces the stored `raw_bin` pixel for
+pixel, verified). ISO was fitted separately because analog gain moves both a
+and b, so mixing ISOs is invalid.
 
-```
-a12 = s·a14   = 4.694 DN     ->  A_Q8  = 1202
-b12 = s²·b14  = 50.3 DN²     ->  B_DN2 = 50   (sigma_read = 7.1 DN)
-```
+| Domain | a | b | sigma_read | R² |
+|---|---:|---:|---:|---:|
+| 14-bit sensor | 60.63 DN | 10,878 DN² | 104 DN | 0.999 |
+| **12-bit pipeline** (s = 4080/15580) | **15.878** | **746** | **27.3** | — |
 
-**Result 1 — the tone curve barely moved.** The LUT built from the measured
-constants differs from the one built from the earlier estimates (a = 1.0,
-b = 16) by **at most 2 LSB across the whole range**. The estimates happened to
-be good; this measurement did not change the curve, it *justified* it.
+→ `A_Q8 = 4065`, `B_DN2 = 746`
 
-**Result 2 — the denoise threshold was more than 2× wrong.**
-sigma_VST = 255·A/(32·D) was 2.12 under the estimates but is **4.56** under the
-measured constants (empirically 4.6 at signal levels 100–2500 — confirming the
-stabilisation actually holds). At 2.4 sigma the threshold therefore moves from
-5 to **11**. Left at 5, the sigma-clip would have been running at ~1.1 sigma
-and denoising almost nothing.
+**The fit was cross-checked against raw pixels.** In one frame's green plane,
+the flattest 16×16 blocks at 0–20 DN signal have std **94–98 DN** (14-bit),
+matching the fitted sigma_read = 104 DN. These numbers are not an artefact of
+curve fitting.
 
-**Uncertainty in b, stated honestly:** per-site fits span 6–85 in this 12-bit
-domain (the green sites give negative intercepts). That range moves the curve
-by ±7 LSB at the very bottom and negligibly above mid-grey. Pinning it needs
-**dark frames at the night ISO** — the standard way to measure read noise.
+> **Correction — the previous commit's values (A_Q8 = 1202, B_DN2 = 50) were
+> wrong.** They came from a different 16-frame set, and **that measurement
+> contradicted itself**: the line fit reported sigma_read = 27 while the same
+> run's direct darkest-bin observation implied ≈68. Fit and observation
+> disagreeing is a signal not to trust the fit; it was passed over at the
+> time. Here the two agree.
 
-**PASCALRAW (daylight) reference measurement:** the same tool on 16 Nikon
-D3200 NEFs gives a = 0.55–0.91 DN and b ≤ 3.97 DN² (observed directly in the
-darkest bin). Its ISO is far lower and **DN-referred read noise scales with
-analog gain**, so those numbers cannot be used for the low-light arm — the 32×
-gap in `a` (0.55 vs 17.9 in the 14-bit domain) shows exactly that.
+**Impact 1 — the tone curve really does change.** Up to **9 LSB** across the
+range versus the previous constants, suppressing the noise floor harder:
+8-bit input 1 now maps to **4** (was 7; plain gamma gives 15).
 
-**Remaining:** dark frames at the night ISO would fix `b` directly instead of
-by extrapolation. Also note the dataset path is shift8-quantised to 8 bits
-(step 16 in this 12-bit domain, quantisation variance ≈21), so the effective
-noise during dataset evaluation is higher than the sensor's own — the board
-path, which takes real RAW, and the dataset path differ in this respect.
+**Impact 2 — the denoise threshold was re-derived.**
+sigma_VST = 255·A/(32·D) = **8.89** (was 4.56), so at 2.4 sigma
+`DENOISE_SIGMA` goes **11 → 21**. This value must be re-derived whenever a/b
+change — it has already moved twice (5 estimated → 11 first measurement → 21
+canonical), and a stale value makes the sigma-clip run at the wrong number of
+sigmas, either doing nothing or over-smoothing.
+
+**ISO caveat:** these are **ISO 6400** constants (91 of the split's 100
+frames). a scales with analog gain and b with its square, so the remaining 9
+frames (ISO 800–5000) are served by a compromise curve. Per-frame LUT
+switching is not implemented and its necessity is unverified.
+
+**PASCALRAW (daylight) reference:** the same tool gives a = 0.55–0.91 and
+b ≤ 3.97 on Nikon D3200 NEFs. The **66×** gap in `a` (0.9 vs 60.6, 14-bit) is
+why low-ISO daylight numbers cannot be used for this arm.
+
+**Remaining:** dark frames at the night ISO would fix b directly rather than by
+fit. The dataset path is also shift8-quantised to 8 bits (step 16 here,
+quantisation variance ≈21), so its effective noise differs from the board path
+that takes real RAW — though against b = 746 that contribution is only ~3%.
 
 ## 5. Measured resources / timing (Vitis HLS 2024.1, xczu7ev, 5.0 ns)
 

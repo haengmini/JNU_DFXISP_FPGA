@@ -22,10 +22,15 @@
 //
 // Pipeline (derivations in lowlight_isp.md):
 //   RAW Bayer 12-bit
-//     -> (1) blackLevelCorrection   [Bayer]  subtract pedestal + restore range
-//     -> (2) gain                   [Bayer]  exposure 2.0x x per-site WB, folded,
-//                                            applied upstream of quantisation
-//     -> (3) 2x2 binning-demosaic   [fused]  R=TL, G=(TR+BL)/2, B=BR
+//     -> (1) binning                [RAW]    same-colour 2x2 average: +6 dB on
+//                                            R/B (4 samples), +9 dB on G (8).
+//                                            BEFORE black level, so the pedestal
+//                                            is subtracted once from the average
+//                                            instead of rectifying each noisy
+//                                            sample at zero (a positive bias).
+//     -> (2) blackLevelCorrection   [binned] subtract pedestal + restore range
+//     -> (3) gain                   [binned] exposure 2.0x x per-channel WB,
+//                                            folded, upstream of quantisation
 //     -> (4) colorcorrectionmatrix  [RGB12]  same matrix as default_isp
 //     -> (5) GAT/Anscombe VST tone  [12->8]  replaces gamma 2.0; linear at the
 //                                            origin so the read-noise floor is
@@ -47,6 +52,16 @@ enum LowlightIspDenoise : int {
     LOWLIGHT_ISP_DENOISE_ON = 1,
 };
 
+// Binning mode (stage 1). SUBSAMPLE reproduces the pre-2026-08-06 behaviour
+// (one R and one B sample per cell = 0 dB, the cell's 2 G samples = +3 dB) and
+// exists ONLY as the ablation baseline: with it, binning's SNR contribution can
+// be measured directly instead of assumed. Measured gain of SAMECOLOR over
+// SUBSAMPLE on synthetic Poisson-Gaussian frames: +5.6 to +7.1 dB.
+enum LowlightIspBinning : int {
+    LOWLIGHT_ISP_BIN_SUBSAMPLE = 0,
+    LOWLIGHT_ISP_BIN_SAMECOLOR = 1,
+};
+
 // Development/analysis top: exposes the denoise switch.
 //   raw_bayer : RAW Bayer RGGB, 12-bit values in uint16_t (W*H)
 //   rgb_out   : packed RGB888 0x00RRGGBB; capacity >= W*H (uses W/2 * H/2)
@@ -57,13 +72,14 @@ extern "C" void lowlight_isp(
     int width,
     int height,
     int denoise_mode,
+    int bin_mode,
     int* out_width,
     int* out_height);
 
 // DFX Reconfigurable Module candidate. Port list is IDENTICAL (type, order,
 // count) to rm_normal_tone_top / rm_low_light_tone_top / rm_default_isp_top,
 // so all of them are valid implementations of the same RP slot (SPEC.md §7).
-// Denoise is enabled.
+// Denoise and same-colour binning are enabled.
 extern "C" void rm_lowlight_isp_top(
     const uint16_t* raw_bayer,
     uint32_t* rgb_out,

@@ -15,13 +15,15 @@ constexpr int RAW12_MAX = 4095;
 // Max binned row width (raw width up to 1920), matching dfxisp_accel.cpp.
 constexpr int MAX_BINNED_W = 960;
 
-// --- (1) blackLevelCorrection [Bayer] ----------------------------------------
+// --- (2) blackLevelCorrection [binned domain] -------------------------------
 constexpr int BLC_LEVEL12 = 2 << 4;   // 32; deployed real-RAW value (2026-07-20)
 constexpr int BLC_MUL_Q8 = 258;       // round(256 * 4095 / (4095 - 32))
 
-// --- (2) gain [Bayer, upstream of quantisation -- principle P3 4.3] ----------
+// --- (3) gain [binned domain, upstream of quantisation -- principle P3 4.3] --
 // Gain cannot change SNR, but placing it before the >>4 keeps quantisation loss
-// minimal; exposure and white balance are folded into ONE multiply per pixel.
+// minimal; exposure and white balance are folded into ONE multiply per channel.
+// Binning (1) already separated the channels, so this is a plain per-channel
+// gain rather than the per-Bayer-site variant default_isp uses.
 // WB stays a fixed constant: three independent campaigns measured WB to be a
 // non-lever (mAP spread 0.0020 vs the BLC lever's 0.0876), so no adaptive AWB
 // pass is spent here -- unlike default_isp, which keeps one for the general arm.
@@ -324,46 +326,81 @@ static inline uint32_t pack_rgb(uint8_t r, uint8_t g, uint8_t b) {
 
 static inline int bin_dim(int d) { return d / 2 < 1 ? 1 : d / 2; }
 
-// Bayer position -> white-balance factor (RGGB: (0,0)=R (0,1)=G (1,0)=G (1,1)=B).
-static inline int bayer_wb_q8(int x, int y) {
+// The four Bayer sites of cell (cx, cy): R, G(top-right), G(bottom-left), B.
+static inline void cell_sites(const uint16_t* raw, int width, int height,
+                              int cx, int cy, int& r, int& g0, int& g1, int& b) {
 #pragma HLS INLINE
-    const bool even_y = (y & 1) == 0;
-    const bool even_x = (x & 1) == 0;
-    if (even_y && even_x) return WB_R_Q8;    // R site
-    if (!even_y && !even_x) return WB_B_Q8;  // B site
-    return WB_G_Q8;                          // G sites
+    const int x0 = 2 * cx;
+    const int x1 = (2 * cx + 1 < width) ? 2 * cx + 1 : width - 1;
+    const int y0 = 2 * cy;
+    const int y1 = (2 * cy + 1 < height) ? 2 * cy + 1 : height - 1;
+    r = raw[y0 * width + x0];
+    g0 = raw[y0 * width + x1];
+    g1 = raw[y1 * width + x0];
+    b = raw[y1 * width + x1];
 }
 
-// Stages (1) + (2), pointwise in the Bayer domain.
-static inline int corrected_bayer(const uint16_t* raw, int width, int x, int y) {
+// Stage (1): binning, in the RAW domain with NO correction applied yet.
+//
+// SAMECOLOR is real same-colour 2x2 binning: it averages the R sites of a 2x2
+// neighbourhood of Bayer cells (4 samples -> sigma/2 -> +6 dB), the B sites
+// likewise, and all 8 G sites (+9 dB). The windows overlap, so the output stays
+// H/2 x W/2 and adjacent outputs are correlated -- the price of keeping the
+// resolution. Measured on synthetic Poisson-Gaussian frames: +5.6 to +7.1 dB.
+//
+// SUBSAMPLE is the legacy path (one R and one B sample from the cell itself,
+// 0 dB; the cell's 2 G samples, +3 dB). It is kept ONLY as the ablation
+// baseline so binning's SNR contribution can be measured directly.
+static inline void binned_raw(const uint16_t* raw, int width, int height,
+                              int bw, int bh, int bx, int by, int bin_mode,
+                              int& r12, int& g12, int& b12) {
 #pragma HLS INLINE
-    int v = raw[y * width + x];
+    int r, g0, g1, b;
+    if (bin_mode == LOWLIGHT_ISP_BIN_SUBSAMPLE) {
+        cell_sites(raw, width, height, bx, by, r, g0, g1, b);
+        r12 = r;
+        g12 = (g0 + g1) / 2;
+        b12 = b;
+        return;
+    }
+    int sum_r = 0, sum_g = 0, sum_b = 0;
+    for (int dy = 0; dy < 2; ++dy) {
+        const int cy = clamp_i(by + dy, 0, bh - 1);
+        for (int dx = 0; dx < 2; ++dx) {
+            const int cx = clamp_i(bx + dx, 0, bw - 1);
+            cell_sites(raw, width, height, cx, cy, r, g0, g1, b);
+            sum_r += r;
+            sum_g += g0 + g1;
+            sum_b += b;
+        }
+    }
+    r12 = sum_r / 4;
+    g12 = sum_g / 8;
+    b12 = sum_b / 4;
+}
+
+// Stages (2) black level and (3) gain, applied ONCE to the binned value.
+// Subtracting the pedestal AFTER averaging is the unbiased order: clipping each
+// noisy sample at zero first rectifies the noise and adds a positive bias --
+// exactly the "noise floor lifted into visible grey" failure mode this arm is
+// built to avoid (lowlight_isp.md §2.5).
+static inline int correct_channel(int v, int wb_q8) {
+#pragma HLS INLINE
     v = v > BLC_LEVEL12 ? v - BLC_LEVEL12 : 0;
     v = clamp_i((v * BLC_MUL_Q8) >> 8, 0, RAW12_MAX);
-    const int gain_q8 = (EXPOSURE_GAIN_Q8 * bayer_wb_q8(x, y)) >> 8;
-    v = clamp_i((v * gain_q8) >> 8, 0, RAW12_MAX);
-    return v;
+    const int gain_q8 = (EXPOSURE_GAIN_Q8 * wb_q8) >> 8;
+    return clamp_i((v * gain_q8) >> 8, 0, RAW12_MAX);
 }
 
-// Stage (3): fused 2x2 binning-demosaic. Note this is sampling for R/B and a
-// 2-tap average for G -- an RGGB 2x2 cell holds one R, two G and one B, so the
-// SNR gain is +3 dB on G only, NOT the +6 dB that true same-colour 2x2 binning
-// (a 4x4 raw footprint) would give. Recovering R/B SNR is left to the
-// edge-aware denoise in stage (6) rather than blind averaging (lowlight_isp.md).
+// Stages (1)-(3).
 static inline void binned_rgb(const uint16_t* raw, int width, int height,
-                              int bx, int by, int& r12, int& g12, int& b12) {
+                              int bw, int bh, int bx, int by, int bin_mode,
+                              int& r12, int& g12, int& b12) {
 #pragma HLS INLINE
-    const int y0 = 2 * by;
-    const int y1 = (2 * by + 1 < height) ? 2 * by + 1 : height - 1;
-    const int x0 = 2 * bx;
-    const int x1 = (2 * bx + 1 < width) ? 2 * bx + 1 : width - 1;
-    const int p00 = corrected_bayer(raw, width, x0, y0);  // R (top-left)
-    const int p01 = corrected_bayer(raw, width, x1, y0);  // G (top-right)
-    const int p10 = corrected_bayer(raw, width, x0, y1);  // G (bottom-left)
-    const int p11 = corrected_bayer(raw, width, x1, y1);  // B (bottom-right)
-    r12 = p00;
-    g12 = (p01 + p10) / 2;
-    b12 = p11;
+    binned_raw(raw, width, height, bw, bh, bx, by, bin_mode, r12, g12, b12);
+    r12 = correct_channel(r12, WB_R_Q8);
+    g12 = correct_channel(g12, WB_G_Q8);
+    b12 = correct_channel(b12, WB_B_Q8);
 }
 
 // Stage (4). Negative CCM coefficients can drive the accumulator below zero; it
@@ -402,7 +439,7 @@ static inline uint8_t sigma_clip(const uint8_t plane[3][MAX_BINNED_W],
 }
 
 static void run_lowlight_isp(const uint16_t* raw, uint32_t* rgb_out,
-                             int width, int height, int denoise_mode,
+                             int width, int height, int denoise_mode, int bin_mode,
                              int& out_width, int& out_height) {
     const int bw = bin_dim(width);
     const int bh = bin_dim(height);
@@ -423,7 +460,7 @@ static void run_lowlight_isp(const uint16_t* raw, uint32_t* rgb_out,
 #pragma HLS PIPELINE II=1
 #pragma HLS LOOP_TRIPCOUNT min=2 max=960
                 int r12 = 0, g12 = 0, b12 = 0;
-                binned_rgb(raw, width, height, bx, by, r12, g12, b12);
+                binned_rgb(raw, width, height, bw, bh, bx, by, bin_mode, r12, g12, b12);
                 pr[slot][bx] = GAT_LUT[ccm_channel(0, r12, g12, b12)];
                 pg[slot][bx] = GAT_LUT[ccm_channel(1, r12, g12, b12)];
                 pb[slot][bx] = GAT_LUT[ccm_channel(2, r12, g12, b12)];
@@ -458,7 +495,7 @@ static void run_lowlight_isp(const uint16_t* raw, uint32_t* rgb_out,
 
 extern "C" void lowlight_isp(
     const uint16_t* raw_bayer, uint32_t* rgb_out, int width, int height,
-    int denoise_mode, int* out_width, int* out_height) {
+    int denoise_mode, int bin_mode, int* out_width, int* out_height) {
 #pragma HLS INTERFACE m_axi port=raw_bayer offset=slave bundle=gmem0 depth=2048
 #pragma HLS INTERFACE m_axi port=rgb_out offset=slave bundle=gmem1 depth=2048
 #pragma HLS INTERFACE s_axilite port=raw_bayer bundle=control
@@ -466,6 +503,7 @@ extern "C" void lowlight_isp(
 #pragma HLS INTERFACE s_axilite port=width bundle=control
 #pragma HLS INTERFACE s_axilite port=height bundle=control
 #pragma HLS INTERFACE s_axilite port=denoise_mode bundle=control
+#pragma HLS INTERFACE s_axilite port=bin_mode bundle=control
 #pragma HLS INTERFACE s_axilite port=out_width bundle=control
 #pragma HLS INTERFACE s_axilite port=out_height bundle=control
 #pragma HLS INTERFACE s_axilite port=return bundle=control
@@ -475,7 +513,7 @@ extern "C" void lowlight_isp(
         return;
     }
     int ow = 0, oh = 0;
-    run_lowlight_isp(raw_bayer, rgb_out, width, height, denoise_mode, ow, oh);
+    run_lowlight_isp(raw_bayer, rgb_out, width, height, denoise_mode, bin_mode, ow, oh);
     if (out_width) *out_width = ow;
     if (out_height) *out_height = oh;
 }
@@ -499,7 +537,8 @@ extern "C" void rm_lowlight_isp_top(
         return;
     }
     int ow = 0, oh = 0;
-    run_lowlight_isp(raw_bayer, rgb_out, width, height, LOWLIGHT_ISP_DENOISE_ON, ow, oh);
+    run_lowlight_isp(raw_bayer, rgb_out, width, height, LOWLIGHT_ISP_DENOISE_ON,
+                     LOWLIGHT_ISP_BIN_SAMECOLOR, ow, oh);
     if (out_width) *out_width = ow;
     if (out_height) *out_height = oh;
 }

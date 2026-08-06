@@ -15,7 +15,7 @@ static uint8_t blue(uint32_t p) { return uint8_t(p & 0xff); }
 
 struct GoldenCase {
     std::string name;
-    int in_w = 0, in_h = 0, denoise = 0, out_w = 0, out_h = 0;
+    int in_w = 0, in_h = 0, denoise = 0, bin_mode = 0, out_w = 0, out_h = 0;
     std::vector<uint16_t> raw;
     std::vector<uint32_t> expected;
 };
@@ -35,7 +35,7 @@ static void check_golden_vectors(const char* path) {
         std::vector<std::string> col;
         std::string cell;
         while (std::getline(ss, cell, ',')) col.push_back(cell);
-        assert(col.size() == 9);
+        assert(col.size() == 10);
 
         const std::string& name = col[0];
         if (cases.empty() || cases.back().name != name) {
@@ -44,21 +44,22 @@ static void check_golden_vectors(const char* path) {
             c.in_w = std::stoi(col[1]);
             c.in_h = std::stoi(col[2]);
             c.denoise = std::stoi(col[3]);
-            c.out_w = std::stoi(col[4]);
-            c.out_h = std::stoi(col[5]);
+            c.bin_mode = std::stoi(col[4]);
+            c.out_w = std::stoi(col[5]);
+            c.out_h = std::stoi(col[6]);
             c.raw.assign(c.in_w * c.in_h, 0);
             c.expected.assign(c.out_w * c.out_h, 0);
             cases.push_back(c);
         }
         GoldenCase& c = cases.back();
-        const std::string& kind = col[6];
-        const int idx = std::stoi(col[7]);
+        const std::string& kind = col[7];
+        const int idx = std::stoi(col[8]);
         if (kind == "raw") {
             assert(idx >= 0 && idx < c.in_w * c.in_h);
-            c.raw[idx] = static_cast<uint16_t>(std::stoul(col[8]));
+            c.raw[idx] = static_cast<uint16_t>(std::stoul(col[9]));
         } else {
             assert(idx >= 0 && idx < c.out_w * c.out_h);
-            c.expected[idx] = static_cast<uint32_t>(std::stoul(col[8], nullptr, 0));
+            c.expected[idx] = static_cast<uint32_t>(std::stoul(col[9], nullptr, 0));
         }
     }
 
@@ -66,7 +67,8 @@ static void check_golden_vectors(const char* path) {
     for (const GoldenCase& c : cases) {
         std::vector<uint32_t> got(c.in_w * c.in_h, 0);
         int out_w = 0, out_h = 0;
-        lowlight_isp(c.raw.data(), got.data(), c.in_w, c.in_h, c.denoise, &out_w, &out_h);
+        lowlight_isp(c.raw.data(), got.data(), c.in_w, c.in_h, c.denoise, c.bin_mode,
+                     &out_w, &out_h);
         // Policy A: shape halves (min 1)
         assert(out_w == c.out_w && out_h == c.out_h);
         assert(out_w == (c.in_w / 2 < 1 ? 1 : c.in_w / 2));
@@ -89,15 +91,17 @@ int main(int argc, char** argv) {
 
     constexpr int W = 8, H = 8;
 
-    // Stage (1): black level sits in the Bayer domain before everything else,
-    // so a frame at/below the pedestal must stay pure black -- the 2.0x gain
-    // and the tone curve must not resurrect it.
+    // Stage (2): black level is applied once to the BINNED value, so a frame
+    // entirely at/below the pedestal must stay pure black -- averaging first
+    // cannot lift it (all samples are at the pedestal), and neither the 2.0x
+    // gain nor the tone curve may resurrect it.
     {
         uint16_t pedestal[W * H];
         for (int i = 0; i < W * H; ++i) pedestal[i] = 32;
         uint32_t out[(W / 2) * (H / 2)] = {};
         int ow = 0, oh = 0;
-        lowlight_isp(pedestal, out, W, H, LOWLIGHT_ISP_DENOISE_ON, &ow, &oh);
+        lowlight_isp(pedestal, out, W, H, LOWLIGHT_ISP_DENOISE_ON,
+                     LOWLIGHT_ISP_BIN_SAMECOLOR, &ow, &oh);
         for (int i = 0; i < ow * oh; ++i) assert(out[i] == 0u);
     }
 
@@ -112,7 +116,8 @@ int main(int argc, char** argv) {
             for (int i = 0; i < W * H; ++i) f[i] = level;
             uint32_t out[(W / 2) * (H / 2)] = {};
             int ow = 0, oh = 0;
-            lowlight_isp(f, out, W, H, LOWLIGHT_ISP_DENOISE_OFF, &ow, &oh);
+            lowlight_isp(f, out, W, H, LOWLIGHT_ISP_DENOISE_OFF,
+                         LOWLIGHT_ISP_BIN_SAMECOLOR, &ow, &oh);
             long s = 0;
             for (int i = 0; i < ow * oh; ++i) s += green(out[i]);
             return s / (ow * oh);
@@ -136,7 +141,7 @@ int main(int argc, char** argv) {
         auto spread = [&](int mode) {
             uint32_t out[(W / 2) * (H / 2)] = {};
             int ow = 0, oh = 0;
-            lowlight_isp(noisy, out, W, H, mode, &ow, &oh);
+            lowlight_isp(noisy, out, W, H, mode, LOWLIGHT_ISP_BIN_SAMECOLOR, &ow, &oh);
             int hi = 0, lo = 255;
             for (int i = 0; i < ow * oh; ++i) {
                 const int v = green(out[i]);
@@ -159,7 +164,7 @@ int main(int argc, char** argv) {
         auto contrast = [&](int mode) {
             uint32_t out[(W / 2) * (H / 2)] = {};
             int ow = 0, oh = 0;
-            lowlight_isp(edge, out, W, H, mode, &ow, &oh);
+            lowlight_isp(edge, out, W, H, mode, LOWLIGHT_ISP_BIN_SAMECOLOR, &ow, &oh);
             // compare the columns immediately left/right of the step
             const int lc = ow / 2 - 1, rc = ow / 2;
             return int(green(out[rc])) - int(green(out[lc]));
@@ -170,13 +175,41 @@ int main(int argc, char** argv) {
         assert(c_on >= c_off - 2);  // edge kept (sigma-clip excludes cross-edge neighbours)
     }
 
+    // Stage (1) is the SNR claim: on a noisy flat frame, real same-colour
+    // binning (4 samples per chroma site, 8 for green) must measurably reduce
+    // the output spread versus the legacy per-cell subsampling. Denoise is OFF
+    // so this isolates binning alone -- this is the ablation that turns "+6 dB"
+    // from an assumption into a measurement.
+    {
+        uint16_t nf[W * H];
+        unsigned seed = 987654321u;
+        for (int i = 0; i < W * H; ++i) {
+            seed = 1103515245u * seed + 12345u;
+            nf[i] = static_cast<uint16_t>(400 + ((seed >> 16) % 200));
+        }
+        auto spread_of = [&](int bin_mode) {
+            uint32_t out[(W / 2) * (H / 2)] = {};
+            int ow = 0, oh = 0;
+            lowlight_isp(nf, out, W, H, LOWLIGHT_ISP_DENOISE_OFF, bin_mode, &ow, &oh);
+            int hi = 0, lo = 255;
+            for (int i = 0; i < ow * oh; ++i) {
+                const int v = green(out[i]);
+                if (v > hi) hi = v;
+                if (v < lo) lo = v;
+            }
+            return hi - lo;
+        };
+        assert(spread_of(LOWLIGHT_ISP_BIN_SAMECOLOR) < spread_of(LOWLIGHT_ISP_BIN_SUBSAMPLE));
+    }
+
     // Stages (5)+(7): a saturated frame never overflows RGB8.
     {
         uint16_t sat[W * H];
         for (int i = 0; i < W * H; ++i) sat[i] = 4095;
         uint32_t out[(W / 2) * (H / 2)] = {};
         int ow = 0, oh = 0;
-        lowlight_isp(sat, out, W, H, LOWLIGHT_ISP_DENOISE_ON, &ow, &oh);
+        lowlight_isp(sat, out, W, H, LOWLIGHT_ISP_DENOISE_ON,
+                     LOWLIGHT_ISP_BIN_SAMECOLOR, &ow, &oh);
         for (int i = 0; i < ow * oh; ++i) {
             assert(red(out[i]) <= 255 && green(out[i]) <= 255 && blue(out[i]) <= 255);
         }
@@ -189,7 +222,8 @@ int main(int argc, char** argv) {
         uint32_t via_top[(W / 2) * (H / 2)] = {}, via_dev[(W / 2) * (H / 2)] = {};
         int ow1 = 0, oh1 = 0, ow2 = 0, oh2 = 0;
         rm_lowlight_isp_top(noisy, via_top, W, H, &ow1, &oh1);
-        lowlight_isp(noisy, via_dev, W, H, LOWLIGHT_ISP_DENOISE_ON, &ow2, &oh2);
+        lowlight_isp(noisy, via_dev, W, H, LOWLIGHT_ISP_DENOISE_ON,
+                     LOWLIGHT_ISP_BIN_SAMECOLOR, &ow2, &oh2);
         assert(ow1 == W / 2 && oh1 == H / 2 && ow1 == ow2 && oh1 == oh2);
         for (int i = 0; i < ow1 * oh1; ++i) assert(via_top[i] == via_dev[i]);
     }
@@ -198,11 +232,13 @@ int main(int argc, char** argv) {
     {
         uint32_t out[4] = {};
         int ow = -1, oh = -1;
-        lowlight_isp(nullptr, out, W, H, LOWLIGHT_ISP_DENOISE_ON, &ow, &oh);
+        lowlight_isp(nullptr, out, W, H, LOWLIGHT_ISP_DENOISE_ON,
+                     LOWLIGHT_ISP_BIN_SAMECOLOR, &ow, &oh);
         assert(ow == 0 && oh == 0);
         uint16_t one = 900;
         uint32_t o1 = 0;
-        lowlight_isp(&one, &o1, 1, 1, LOWLIGHT_ISP_DENOISE_ON, &ow, &oh);
+        lowlight_isp(&one, &o1, 1, 1, LOWLIGHT_ISP_DENOISE_ON,
+                     LOWLIGHT_ISP_BIN_SAMECOLOR, &ow, &oh);
         assert(ow == 1 && oh == 1);
     }
 

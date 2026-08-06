@@ -1,0 +1,7 @@
+build/
+__pycache__/
+*.log
+*.jou
+*.str
+*.bit
+*.dcp

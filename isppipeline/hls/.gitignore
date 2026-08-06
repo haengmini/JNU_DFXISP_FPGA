@@ -1,0 +1,9 @@
+build/
+__pycache__/
+*.py[cod]
+*.log
+*.jou
+*.str
+*.xclbin
+*.xo
+.autopilot/

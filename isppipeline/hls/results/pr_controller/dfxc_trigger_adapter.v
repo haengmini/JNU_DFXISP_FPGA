@@ -12,10 +12,14 @@
 // handshake shim: ack = shutdown request AND the active RM reporting ap_idle
 // (the same drain condition the custom controller's DRAIN_WAIT state used).
 //
-// Port names on the IP side follow PG374's Virtual Socket Manager interface
-// (vsm_VS_0_*). CONFIRM the exact generated names after configuring the IP
-// (1 Virtual Socket, 2 RMs, bitstream address table in DDR) — this file
-// encodes the contract, not a verified pinout. See dfxc_adapter.md.
+// Port contract CONFIRMED against the generated IP (Vivado 2024.1,
+// dfx_controller v1.0, probe 2026-08-06 — scripts/dfx/gen_dfx_controller.tcl):
+//   vsm_VS_0_hw_triggers  input [1:0]  (one wire per trigger; trigger i loads
+//                                       the RM mapped by TRIGGERi_TO_RM)
+//   vsm_VS_0_rm_shutdown_req / _ack / _decouple / _reset : 1-bit as assumed.
+// Remaining Stage 6 items: per-RM SHUTDOWN_REQUIRED=hw config (RM-level API
+// keys errored in batch — set via GUI/BD) and vsm_VS_0_rm_reset wiring into
+// the RM reset tree. See dfxc_adapter.md §"IP generation probe".
 // =============================================================================
 module dfxc_trigger_adapter (
     input  wire clk,

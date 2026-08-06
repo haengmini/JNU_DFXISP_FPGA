@@ -1,24 +1,10 @@
 `timescale 1ns/1ps
 // =============================================================================
-// pr_controller.v -- First-pass DFX partial-reconfiguration controller FSM
-// (improvement-strategy-2026-07-03.md Phase 2.1).
-//
-// Context: config1/config2 utilization reports (2026-07-03) show ZERO
-// ICAPE3/STARTUPE3 instances in the current design -- there is no PR
-// controller yet, which is also why yesterday's isolated-ICAPE3 simulation
-// attempt (pr-latency-vivado-sim-2026-07-02.md) could never produce a
-// trustworthy completion signal (ICAPE3's PRDONE depends on eos_startup,
-// which needs a real STARTUPE3/device-level context this design doesn't
-// have). This module sidesteps that entirely: instead of trusting ICAPE3's
-// PRDONE, it completes based on its OWN word counter reaching the known
-// partial-bitstream word count (171,633 words, verified 2026-07-02 by
-// parsing the real rm_lowlight_partial.bit) -- a signal this design fully
-// controls and can validate in simulation without needing STARTUPE3.
-//
-// Fabric-only version: partial bitstream source is a BRAM (pre-loaded via
-// $readmemh in simulation / actual BRAM init in real use), NOT yet PS/DDR
-// (that upgrade is Phase 3, per the strategy doc -- needs PS/DDR
-// integration first).
+// pr_controller.v — first-pass DFX partial-reconfiguration controller FSM.
+// Completion = own word counter reaching NWORDS (the verified partial-bitstream
+// word count), NOT ICAPE3's PRDONE (needs STARTUPE3 context we don't have).
+// Fabric-only: bitstream source is BRAM, not yet PS/DDR; drain_ready not yet
+// tied to the real RM ap_idle. Background & limits: pr_controller.md.
 //
 // FSM: IDLE -> DRAIN_WAIT -> ICAP_ARM -> ICAP_STREAM -> DONE -> IDLE
 // =============================================================================

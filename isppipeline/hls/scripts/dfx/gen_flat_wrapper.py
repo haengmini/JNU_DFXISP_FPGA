@@ -16,8 +16,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-DFX_GEN = Path("/home/mini/workspace/dfxisp/.claude/worktrees/hw-interface-prompt"
-               "/isppipeline/hls/scripts/dfx/generate_static_wrapper.py")
+DFX_GEN = Path(__file__).resolve().parent / "generate_static_wrapper.py"
 
 
 def load_dfx_gen():

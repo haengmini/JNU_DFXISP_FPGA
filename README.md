@@ -43,6 +43,12 @@ data/                            # 실 RAW 샘플 (아래 "데이터셋" 절)
 계산하므로 디렉터리 구조를 원본과 동일하게 유지했습니다 — 스크립트 수정
 없이 그대로 동작합니다.
 
+소스의 긴 설계 배경 주석은 **같은 폴더의 동명 `.md` 노트로 분리**돼
+있습니다 (`src/dfxisp_accel.md`, `include/dfxisp_accel.md`,
+`results/pr_controller/pr_controller.md`,
+`results/icap_sim/icap_pr_latency_tb.md`). 코드에는 짧은 요약과 해당 노트
+포인터만 남아 있습니다.
+
 ## 데이터셋 — 입력은 실 RAW (pseudo-RAW 아님)
 
 파이프라인 입력은 카메라 ISP를 거치지 않은 **실 RAW 센서 데이터**입니다.

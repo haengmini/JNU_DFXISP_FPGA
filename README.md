@@ -128,17 +128,19 @@ builds for bitstreams / `pr_verify`.
 In order:
 
 1. **Prerequisites**: the fabric-internal trigger chain now exists —
-   `checker_hysteresis.v` (Schmitt mode arbiter, same dir as
-   `pr_controller.v`) consumes the HLS core's `hyst_flags`/`ap_vld` wires
-   and drives `pr_controller.trigger` with a request/ack handshake; the
-   end-to-end simulation `checker_to_pr_tb.v` passes in xsim. Remaining:
-   wire the re-synthesized `dfxisp_accel` `hyst_flags` ports to it, connect
-   `drain_ready` to the real RM `ap_idle`, instantiate ICAPE3/STARTUPE3,
-   and replace the BRAM simulation source with the real SD/DDR path. Also
-   see `checker_hysteresis.md` §"What Stage 6 still owes" for pr_controller
-   integration considerations found by source inspection (stale `NWORDS`
-   vs the new-pblock bitstream, 2-cycles-per-word streaming, ICAP clock
-   domain at its rated 100 MHz).
+   `checker_hysteresis.v` (Schmitt mode arbiter) consumes the HLS core's
+   `hyst_flags`/`ap_vld` wires; **the production reconfiguration path is
+   the AMD DFX Controller IP (PG374, adopted 2026-08-06)**, bridged by
+   `dfxc_trigger_adapter.v` (per-RM one-hot HW trigger + `ap_idle`
+   shutdown-ack shim; chain verified against a PG374 contract model in
+   `checker_to_dfxc_tb.v`, xsim PASS). Follow the integration checklist in
+   `dfxc_adapter.md`: generate/configure the IP (1 VS, 2 RMs, DDR bitstream
+   table, ICAP), add the DFX Decoupler, confirm generated port names, wire
+   the re-synthesized `hyst_flags` ports and `rm_ap_idle`, decide the
+   post-swap `ap_start` policy. The hand-written `pr_controller.v` (+
+   `checker_to_pr_tb.v`) is kept for latency characterization only — its
+   caveats (stale `NWORDS`, 2-cycles-per-word, ICAP rated 100 MHz) apply to
+   that instrument, not the product.
 2. PS/DDR integration (Vivado Block Design).
 3. Clock/reset pin assignment for the new pblock + WNS re-verification.
 4. (Optional) investigate the partition-pin count drop 15 → 3 (recorded as

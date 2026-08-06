@@ -1,5 +1,11 @@
 # pr_controller.v — design background notes
 
+> **Role change (2026-08-06):** the AMD DFX Controller IP (PG374) was
+> adopted as the production reconfiguration path (`dfxc_adapter.md`). This
+> module is retained **for latency characterization only** — its
+> self-owned word-count completion is what makes stage-by-stage
+> trigger→done measurement possible.
+
 Documentation split out of the source comments of `pr_controller.v`.
 (Origin: haengmini/dfxisp commit `ea6c2de`.)
 

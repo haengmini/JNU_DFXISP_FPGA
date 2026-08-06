@@ -55,6 +55,15 @@ dfxisp_accel (HLS core)                 checker_hysteresis.v (this, static regio
   8 cycles) → ICAP stream → done, then the reverse transition. 2
   reconfigurations, no PS in the loop.
 
+> **Update (2026-08-06, later the same day):** the AMD DFX Controller IP
+> (PG374) was adopted as the production reconfiguration path —
+> `dfxc_trigger_adapter.v` bridges this block to the IP with the same
+> request/ack semantics (`checker_hysteresis` itself is unchanged), and
+> `checker_to_dfxc_tb.v` verifies the chain against a PG374 contract model
+> (xsim PASS). See `dfxc_adapter.md`. Items 3–5 below then apply to the
+> characterization path (custom `pr_controller.v`) only; the production
+> checklist lives in `dfxc_adapter.md`.
+
 ## What Stage 6 still owes on top of this
 
 1. Wire the real HLS core's `hyst_flags[1:0]` + `hyst_flags_ap_vld` RTL

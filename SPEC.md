@@ -472,11 +472,12 @@ gamma when b = 0); variance stabilisation lets the denoise threshold be a
 single constant (sigma_VST ≈ 2.1 LSB). Binning is **real same-colour 2×2
 averaging** (R/B 4 samples +6 dB, G 8 samples +9 dB; measured +5.6–7.1 dB)
 and is placed **ahead of black level** to avoid noise-rectification bias.
-Measured csynth: LUT 12,826 / DSP 20 / FF 7,555 / BRAM 11 at the same
-3.650 ns — 3.05× v1's RM_LOW_LIGHT_TONE (4,204/9/3,243/8). **Note: the
-low-light arm is now larger than the normal arm (12,659), so "the low-light
-RM is smaller" can no longer be claimed** (these are pre-line-buffer-
-optimisation numbers). **Not a deployed arm** — mAP unevaluated, post-route
+Measured csynth (**deployed configuration = denoise OFF**, per the
+2026-08-06 ablation): LUT 8,115 / DSP 20 / FF 5,483 / BRAM 11 at the same
+3.650 ns — 1.93× v1's RM_LOW_LIGHT_TONE (4,204/9/3,243/8) and **36% smaller
+than the normal arm** (default_ISP, 12,659). The denoise-ON build measured
+12,826 (larger than the normal arm) but its gain was not demonstrated in the
+ablation, so it is excluded from the deployed RM. **Not a deployed arm** — mAP unevaluated, post-route
 unmeasured, promotion undecided. Details: `src/lowlight_isp.md`.
 
 ---

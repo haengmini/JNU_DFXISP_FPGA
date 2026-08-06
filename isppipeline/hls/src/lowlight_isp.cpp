@@ -543,7 +543,13 @@ extern "C" void rm_lowlight_isp_top(
         return;
     }
     int ow = 0, oh = 0;
-    run_lowlight_isp(raw_bayer, rgb_out, width, height, LOWLIGHT_ISP_DENOISE_ON,
+    // Denoise is OFF in the deployed RM: the 2026-08-06 ablation measured its
+    // gain at +0.0044 / -0.0022 (the two mAP metrics disagree) once real
+    // same-colour binning is in place, which does not justify 27 compare/
+    // selects per output pixel. The switch stays on the dev top so it can be
+    // re-tested if binning or the detector changes.
+    // Evidence: results/v2-arm-ablation-2026-08-06.md §2.1, §2.4.
+    run_lowlight_isp(raw_bayer, rgb_out, width, height, LOWLIGHT_ISP_DENOISE_OFF,
                      LOWLIGHT_ISP_BIN_SAMECOLOR, ow, oh);
     if (out_width) *out_width = ow;
     if (out_height) *out_height = oh;

@@ -173,12 +173,13 @@ int main(int argc, char** argv) {
 
     // DFX contract: rm_lowlight_isp_top is a drop-in for the RP slot -- same
     // 6-argument signature as the other RM tops, and identical behaviour to
-    // lowlight_isp() with denoise enabled.
+    // lowlight_isp() with denoise DISABLED (the deployed configuration since
+    // the 2026-08-06 ablation).
     {
         uint32_t via_top[(W / 2) * (H / 2)] = {}, via_dev[(W / 2) * (H / 2)] = {};
         int ow1 = 0, oh1 = 0, ow2 = 0, oh2 = 0;
         rm_lowlight_isp_top(noisy, via_top, W, H, &ow1, &oh1);
-        lowlight_isp(noisy, via_dev, W, H, LOWLIGHT_ISP_DENOISE_ON,
+        lowlight_isp(noisy, via_dev, W, H, LOWLIGHT_ISP_DENOISE_OFF,
                      LOWLIGHT_ISP_BIN_SAMECOLOR, &ow2, &oh2);
         assert(ow1 == W / 2 && oh1 == H / 2 && ow1 == ow2 && oh1 == oh2);
         for (int i = 0; i < ow1 * oh1; ++i) assert(via_top[i] == via_dev[i]);

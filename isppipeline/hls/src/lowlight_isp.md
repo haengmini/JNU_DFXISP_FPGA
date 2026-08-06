@@ -164,7 +164,7 @@ the denoise may shrink, which **raises the priority of the denoise ablation**
 | `WB_R/G/B_Q8` | 286/256/307 | confirmed non-lever — fixed |
 | **`A_Q8` (a)** | **4065 (a = 15.878 DN)** | ✅ **measured on the evaluation split itself** (split_nod, 91 ISO-6400 frames), §4.1 |
 | **`B_DN2` (b)** | **746 (sigma_read = 27.3 DN)** | ✅ fit **cross-checked against raw pixels**, §4.1 |
-| `DENOISE_SIGMA` | **21** (≈2.4 sigma) | tied to the calibration — sigma_VST = 8.89. Has moved twice (5 → 11 → 21); re-derive whenever a/b change |
+| `DENOISE_SIGMA` | **21** (≈2.4 sigma, **unused in the deployed RM**) | tied to the calibration — sigma_VST = 8.89. Has moved twice (5 → 11 → 21); re-derive whenever a/b change |
 | soft-knee | **not implemented** | measured saturation ≤ 2.13%, so no evidence justifies it; a LUT-only change if wanted later |
 
 ### 4.1 Calibration (2026-08-06) — **settled on the evaluation split itself**
@@ -229,37 +229,41 @@ that takes real RAW — though against b = 746 that contribution is only ~3%.
 
 | top | BRAM_18K | DSP | FF | LUT | Est. period |
 |---|---:|---:|---:|---:|---:|
-| **`rm_lowlight_isp_top`** (v2 low-light, **real binning**) | **11** | **20** | **7,555** | **12,826** | 3.650 ns |
-| (reference) same arm, subsample era | 11 | 17 | 6,447 | 10,848 | 3.650 ns |
+| **`rm_lowlight_isp_top`** (deployed, **denoise OFF**) | 11 | 20 | **5,483** | **8,115** | 3.650 ns |
+| (reference) same arm, denoise ON | 11 | 20 | 7,555 | 12,826 | 3.650 ns |
 | `rm_default_isp_top` (v2 normal) | 4 | 28 | 8,794 | 12,659 | 3.650 ns |
 | `rm_low_light_tone_top` (v1 low-light) | 8 | 9 | 3,243 | 4,204 | 3.650 ns |
 | `rm_normal_tone_top` (v1 normal) | 4 | 12 | 3,797 | 5,202 | 3.650 ns |
 
-**A failed prediction, recorded:** the design proposal estimated "+10–20% over
-the current arm"; the measurement is **3.05× v1 (4,204 → 12,826 LUT)**.
-Breakdown:
-- **denoise (⑥) dominates** — 3 channels × 9 neighbours = 27 compare/selects
-  per output pixel
-- **real binning (①) costs +1,978 LUT (+18%)** — raw reads per output pixel
-  went from 4 to **16** (overlapping 2×2 windows), and the address arithmetic
-  with them
-- CCM introduced (identity → a real 3×3): DSP 9 → 20
-- GAT LUT of 4096 entries (vs the 256-entry gamma LUT): BRAM 8 → 11
+**Effect of dropping denoise** (per the 2026-08-06 ablation) — the RM top
+passes the `DENOISE_OFF` constant, so HLS constant-propagation removes the
+path at synthesis:
 
-**Timing is identical across all arms** (3.650 ns = 273.97 MHz).
+| | denoise ON | **denoise OFF** | change |
+|---|---:|---:|---:|
+| LUT | 12,826 | **8,115** | **−4,711 (−36.7%)** |
+| FF | 7,555 | **5,483** | −2,072 (−27.4%) |
+| BRAM / DSP / timing | 11 / 20 / 3.650 ns | 11 / 20 / 3.650 ns | unchanged |
 
-> **⚠️ One sub-claim of the DFX story has collapsed.** In the subsample era
-> the low-light arm (10,848) was 14% smaller than the normal arm (12,659), so
-> "low-light mode is cheaper" was sayable. With real binning it is **12,826 —
-> 1.3% LARGER than the normal arm**. The claim that DFX saves against Arm2
-> (both resident) still holds, but **"the low-light RM is smaller" no longer
-> does** — do not use that phrasing in the paper.
->
-> **Un-done optimisation:** the cause is servicing the overlapping windows
-> with direct raw reads, 16 per output pixel. A 4-row line buffer would reuse
-> them and bring it to one read per pixel, improving both area and bandwidth.
-> These numbers are **pre-optimisation**, so addressing this first may make
-> the low-light arm smaller again.
+**The resource story is restored:**
+- 3.05× → **1.93×** versus v1 (4,204)
+- **36% smaller than the normal arm** (default_ISP, 12,659) — the
+  *"the low-light RM is smaller"* sub-claim retired earlier **can be used
+  again for the deployed configuration**; the structural advantage of
+  processing only H/2 × W/2 had been masked by the denoise cost.
+- And detection still beats v1 on both metrics in this configuration
+  (+0.0075 / +0.0242; its mAP@50 of 0.3710 is the best of the six arms
+  measured).
+
+> **Why BRAM did not move (remaining optimisation):** it stays at 11 because
+> the 3-row sliding buffer that fed denoise (`pr/pg/pb[3][960]`) is still
+> allocated. Without denoise the rows can be emitted directly, which would
+> recover that BRAM (not done).
+
+**Failed prediction, kept on record:** the design proposal estimated
+"+10–20%"; the measurement was 3.05× v1 with denoise and is still 1.93×
+without it — driven by binning's 16 reads per output pixel plus the real CCM
+and the GAT LUT.
 
 **Post-route has not been measured** (SPEC §10.3's arm table is on the
 post-route flat axis — **do not mix** it with these csynth numbers).

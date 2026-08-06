@@ -16,11 +16,13 @@ RM_GOLDEN_CSV := tests/rm_golden_vectors.csv
 RM_CSIM_BIN := $(BUILD_DIR)/dfxisp_rm_csim
 DEFAULT_ISP_GOLDEN_CSV := tests/default_isp_golden_vectors.csv
 DEFAULT_ISP_CSIM_BIN := $(BUILD_DIR)/default_isp_csim
+LOWLIGHT_ISP_GOLDEN_CSV := tests/lowlight_isp_golden_vectors.csv
+LOWLIGHT_ISP_CSIM_BIN := $(BUILD_DIR)/lowlight_isp_csim
 REPORT_MD := reports/latest.md
 HLS_SRC := src/dfxisp_accel.cpp include/dfxisp_accel.hpp
 HLS_TB := tests/test_dfxisp_csim.cpp $(GOLDEN_CSV)
 
-.PHONY: all csim golden verify cross-check report hls-report hls rm-golden rm-csim rm-verify default-isp-golden default-isp-csim default-isp-verify scheduler analysis sw-stage py-verify clean
+.PHONY: all csim golden verify cross-check report hls-report hls rm-golden rm-csim rm-verify default-isp-golden default-isp-csim default-isp-verify lowlight-isp-golden lowlight-isp-csim lowlight-isp-verify scheduler analysis sw-stage py-verify clean
 
 all: csim
 
@@ -91,9 +93,6 @@ rm-verify: rm-golden rm-csim
 # default_ISP: standard ISP arm following the Vitis Vision isppipeline stage
 # order (Bayer-domain BLC/gain -> demosaic -> adaptive AWB -> CCM -> gamma).
 # Additive arm; does not touch dfxisp_accel's golden contract.
-# NOTE (this extracted repo): default-isp-golden needs the origin repo's
-# tools/gen_default_isp_golden.py; default-isp-csim works against the
-# committed golden CSV.
 default-isp-golden:
 	$(PYTHON) tools/gen_default_isp_golden.py --out $(DEFAULT_ISP_GOLDEN_CSV)
 
@@ -104,6 +103,23 @@ default-isp-csim: $(DEFAULT_ISP_CSIM_BIN)
 	./$(DEFAULT_ISP_CSIM_BIN) $(DEFAULT_ISP_GOLDEN_CSV)
 
 default-isp-verify: default-isp-golden default-isp-csim
+
+# lowlight_ISP: proposal low-light arm (v2). Shares default_ISP's correction
+# backbone; specialisation = 2x2 binning + 2.0x upstream gain + GAT/VST tone
+# + edge-preserving denoise. Additive; RM_LOW_LIGHT_TONE is untouched.
+# NOTE (this extracted repo): lowlight-isp-golden needs the origin repo's
+# tools/gen_lowlight_isp_golden.py; lowlight-isp-csim works against the
+# committed golden CSV.
+lowlight-isp-golden:
+	$(PYTHON) tools/gen_lowlight_isp_golden.py --out $(LOWLIGHT_ISP_GOLDEN_CSV)
+
+$(LOWLIGHT_ISP_CSIM_BIN): src/lowlight_isp.cpp tests/test_lowlight_isp_csim.cpp include/lowlight_isp.hpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) src/lowlight_isp.cpp tests/test_lowlight_isp_csim.cpp -o $(LOWLIGHT_ISP_CSIM_BIN)
+
+lowlight-isp-csim: $(LOWLIGHT_ISP_CSIM_BIN)
+	./$(LOWLIGHT_ISP_CSIM_BIN) $(LOWLIGHT_ISP_GOLDEN_CSV)
+
+lowlight-isp-verify: lowlight-isp-golden lowlight-isp-csim
 
 scheduler: | $(BUILD_DIR)
 	$(PYTHON) tools/scheduler_sim.py --out results/scheduler.csv

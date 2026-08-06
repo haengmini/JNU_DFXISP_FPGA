@@ -460,6 +460,20 @@ identical 3.650 ns timing). **Not a deployed arm yet** — mAP unevaluated,
 post-route unmeasured, and promotion to `RM_NORMAL` is undecided (origin
 `STRATEGY.md` open question #4). Details: `src/default_isp.md`.
 
+**lowlight_ISP (new 2026-08-06, coexisting arm):** the proposal low-light arm
+v2 (`src/lowlight_isp.cpp`, `rm_lowlight_isp_top`, same 6-argument DFX
+contract). It **shares default_ISP's correction backbone** (Bayer BLC, Bayer
+gain, CCM) and differs only in **{2×2 binning, 2.0× exposure gain,
+GAT/Anscombe VST tone, VST-domain edge-preserving denoise}** — narrowing the
+arm difference to the low-light specialisation alone, which makes the
+comparison controlled. The GAT tone is linear at the origin, so it amplifies
+the read-noise floor half as much as gamma 2.0 (and degenerates exactly to
+gamma when b = 0); variance stabilisation lets the denoise threshold be a
+single constant (sigma_VST ≈ 2.1 LSB). Measured csynth: LUT 10,848 / DSP 17 /
+FF 6,447 / BRAM 11 at the same 3.650 ns — 2.58× v1's RM_LOW_LIGHT_TONE
+(4,204/9/3,243/8). **Not a deployed arm** — mAP unevaluated, post-route
+unmeasured, promotion undecided. Details: `src/lowlight_isp.md`.
+
 ---
 
 ## 8. Verification specification (bit-exact propagation chain)

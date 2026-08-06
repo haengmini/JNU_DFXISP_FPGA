@@ -35,7 +35,8 @@ SPEC.md                          # canonical design spec — §6–7 structure/R
                                  #   §10 measured resources/timing
 isppipeline/hls/
   src/, include/                 # HLS C++ sources (dfxisp_accel = static+RP, dfxisp_rm = RMs,
-                                 #   default_isp = Vitis-Vision-aligned standard ISP arm)
+                                 #   default_isp = Vitis-Vision-aligned standard ISP arm,
+                                 #   lowlight_isp = proposal low-light arm v2)
   tests/                         # csim testbenches + golden vector CSVs (committed)
   scripts/vitis_hls.tcl          # HLS csynth/cosim flow
   scripts/dfx/                   # Vivado DFX flow (dfx_flow.tcl etc.)
@@ -52,7 +53,7 @@ repo — every script works verbatim.
 
 Long design-background comments from the sources have been **split into
 same-named `.md` notes next to each file** (`src/dfxisp_accel.md`,
-`src/default_isp.md`, `include/dfxisp_accel.md`,
+`src/default_isp.md`, `src/lowlight_isp.md`, `include/dfxisp_accel.md`,
 `results/pr_controller/checker_hysteresis.md`,
 `results/pr_controller/dfxc_adapter.md`,
 `results/icap_sim/icap_pr_latency_tb.md`; the archived
@@ -107,7 +108,7 @@ regenerate:
 
 ```bash
 cd isppipeline/hls
-make csim rm-csim default-isp-csim   # C simulation — compares against golden CSVs, runs immediately
+make csim rm-csim default-isp-csim lowlight-isp-csim   # C simulation — compares against golden CSVs, runs immediately
 # csynth/cosim: vitis_hls -f scripts/vitis_hls.tcl
 #   Caution — a known bug drops design sources added with add_files from a
 #   nested project path (link error: undefined symbol: dfxisp_accel).

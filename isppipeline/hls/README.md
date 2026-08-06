@@ -59,6 +59,13 @@ HLS/Vitis flow.
 - `tests/test_default_isp_csim.cpp` + `tests/default_isp_golden_vectors.csv` — its C-sim
   and committed golden (`make default-isp-csim`; regenerating the golden needs the origin
   repo's `tools/gen_default_isp_golden.py`)
+- `include/lowlight_isp.hpp` · `src/lowlight_isp.cpp` — **lowlight_ISP** (new 2026-08-06):
+  the proposal low-light arm v2. Shares default_ISP's correction backbone and differs only
+  in **{2×2 binning, 2.0× upstream gain, GAT/VST tone, edge-preserving denoise}**, making
+  the arm comparison controlled. The deployed RM_LOW_LIGHT_TONE is untouched. Details:
+  `src/lowlight_isp.md`
+- `tests/test_lowlight_isp_csim.cpp` + `tests/lowlight_isp_golden_vectors.csv` — its C-sim
+  and committed golden (`make lowlight-isp-csim`)
 
 > The experiment arms (§7) and ablations (§12 Task 5) live separately in
 > `src/dfxisp_rm.cpp` / `tools/rm_model.py` (static / reg_only / dfx_bin /
@@ -104,6 +111,7 @@ must state which category it belongs to.
 cd isppipeline/hls
 make csim              # smoke tests
 make default-isp-csim  # default_ISP (Vitis-Vision-aligned arm) golden compare
+make lowlight-isp-csim # lowlight_ISP (proposal low-light arm v2) golden compare
 make verify    # regenerate golden + packed RGB888 bit-level compare (origin repo only)
 make report    # refresh reports/latest.md (includes architecture gate table; origin repo only)
 ```

@@ -162,49 +162,56 @@ the denoise may shrink, which **raises the priority of the denoise ablation**
 | `BLC_LEVEL12` / `BLC_MUL_Q8` | 32 / 258 | inherited from the deployed value; **re-sweep needed** after GAT (§2.1 prediction) |
 | `EXPOSURE_GAIN_Q8` | 512 (2.0×) | inherited from v1; not swept since moving upstream |
 | `WB_R/G/B_Q8` | 286/256/307 | confirmed non-lever — fixed |
-| **`A_Q8` (a)** | **256 (a = 1.0 DN)** | just above the measured range 0.55–0.91 — kept, §4.1 |
-| **`B_DN2` (b)** | **16 (sigma_read = 4 DN)** | 4× the measured PASCALRAW upper bound (b ≤ 3.97), but that is the wrong sensor — kept, §4.1 |
-| `DENOISE_SIGMA` | 5 (≈2.4 sigma) | derived-value based; sweep needed |
+| **`A_Q8` (a)** | **1202 (a = 4.694 DN)** | ✅ **measured on the target sensor** (Sony RX100 VII, ISO 6400), §4.1 |
+| **`B_DN2` (b)** | **50 (sigma_read = 7.1 DN)** | ✅ measured, but **uncertain** (per-site 6–85); curve impact ≤7 LSB, §4.1 |
+| `DENOISE_SIGMA` | **11** (≈2.4 sigma) | tied to the calibration — measured sigma_VST = 4.56 (it was 5 when sigma_VST was estimated at 2.1) |
 | soft-knee | **not implemented** | measured saturation ≤ 2.13%, so no evidence justifies it; a LUT-only change if wanted later |
 
-### 4.1 Calibration attempt (2026-08-06) — partial, constants unchanged
+### 4.1 Calibration (2026-08-06) — **completed on the target sensor**
 
-`tools/calibrate_noise_model.py` (origin repo, new) ran single-image photon
-transfer over **16 PASCALRAW original NEFs** (8×8 blocks → 2nd-percentile
-variance per brightness bin → χ² bias correction → linear fit):
+`tools/calibrate_noise_model.py` (origin repo) runs single-image photon
+transfer: 8×8 blocks → 2nd-percentile variance per brightness bin → χ² bias
+correction → linear fit.
 
-| Quantity | Value | Confidence |
-|---|---|---|
-| slope `a` | **0.55 – 0.91 DN** | varies with settings, R² 0.88–0.97 |
-| intercept `b` (line fit) | **negative (−32)** | ❌ **unusable** — physically impossible |
-| `b` upper bound (darkest bin, direct) | **≤ 3.97 DN²** (sigma_read ≤ 2.0 DN, n=19,747) | ✅ observed, not extrapolated |
+**Final: 16 Sony RX100 VII original ARWs** (RAW-NOD, ISO 6400, 1/100 s, night)
+— the target sensor measured in the target condition. Fitted in the 14-bit
+sensor domain (pedestal 800 subtracted): **a = 17.92 DN, b = 734 DN²,
+R² = 0.94** (per-site R² 0.91–0.96). Converted to this 12-bit pipeline domain
+by the shift8 scale s = 4080/15580:
 
-**Why the intercept fails:** in natural daylight images the "flat block"
-population changes with brightness (shadows below, sky and texture above).
-Texture contaminates even the low percentile at higher signal, steepening the
-slope so the extrapolation to zero goes negative. Read noise is properly
-measured from a **dark frame** (capped lens), and PASCALRAW has none.
+```
+a12 = s·a14   = 4.694 DN     ->  A_Q8  = 1202
+b12 = s²·b14  = 50.3 DN²     ->  B_DN2 = 50   (sigma_read = 7.1 DN)
+```
 
-**Why the constants were nonetheless left alone — it is the wrong sensor:**
+**Result 1 — the tone curve barely moved.** The LUT built from the measured
+constants differs from the one built from the earlier estimates (a = 1.0,
+b = 16) by **at most 2 LSB across the whole range**. The estimates happened to
+be good; this measurement did not change the curve, it *justified* it.
 
-1. The calibration target is **PASCALRAW (Nikon D3200, daylight, low ISO)**
-   while this arm aims at **SonyNOD (RX100 VII, night, high ISO)**. Read
-   noise **in DN scales with analog gain**, so applying a low-ISO daylight
-   `b ≤ 4` to a high-ISO night frame errs in exactly the condition that
-   matters most; the present 16 may well be closer for the night case.
-2. **The Sony ARW originals are not on disk** — `data/sonynod_test/` holds
-   only the shift8 `raw_bin` conversion, whose samples are all multiples of
-   256 (8-bit derived), so the 12-bit read-noise scale has been quantised
-   away. The target sensor cannot currently be measured at all.
+**Result 2 — the denoise threshold was more than 2× wrong.**
+sigma_VST = 255·A/(32·D) was 2.12 under the estimates but is **4.56** under the
+measured constants (empirically 4.6 at signal levels 100–2500 — confirming the
+stabilisation actually holds). At 2.4 sigma the threshold therefore moves from
+5 to **11**. Left at 5, the sigma-clip would have been running at ~1.1 sigma
+and denoising almost nothing.
 
-**Conclusion:** `a` now has a measured range (0.55–0.91) and the current 1.0
-sits just above it; `b` cannot be measured on the target sensor. Neither was
-changed — moving constants on a half-calibration would buy the appearance of
-measurement without the accuracy (SPEC §11.4).
+**Uncertainty in b, stated honestly:** per-site fits span 6–85 in this 12-bit
+domain (the green sites give negative intercepts). That range moves the curve
+by ±7 LSB at the very bottom and negligibly above mid-grey. Pinning it needs
+**dark frames at the night ISO** — the standard way to measure read noise.
 
-**What is needed:** (a) the SonyNOD ARW originals, and (b) **dark frames** at
-the night shooting ISO. With those, `b` comes straight from the dark-frame
-variance and `a` from the same tool.
+**PASCALRAW (daylight) reference measurement:** the same tool on 16 Nikon
+D3200 NEFs gives a = 0.55–0.91 DN and b ≤ 3.97 DN² (observed directly in the
+darkest bin). Its ISO is far lower and **DN-referred read noise scales with
+analog gain**, so those numbers cannot be used for the low-light arm — the 32×
+gap in `a` (0.55 vs 17.9 in the 14-bit domain) shows exactly that.
+
+**Remaining:** dark frames at the night ISO would fix `b` directly instead of
+by extrapolation. Also note the dataset path is shift8-quantised to 8 bits
+(step 16 in this 12-bit domain, quantisation variance ≈21), so the effective
+noise during dataset evaluation is higher than the sensor's own — the board
+path, which takes real RAW, and the dataset path differ in this respect.
 
 ## 5. Measured resources / timing (Vitis HLS 2024.1, xczu7ev, 5.0 ns)
 

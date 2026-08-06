@@ -1,0 +1,12 @@
+{
+  "source_ann_dir": "/home/mini/workspace/dfxisp/data/PASCAL/extracted/PASCALRAW/annotations",
+  "raw_dir": "/home/mini/workspace/dfxisp/data/PASCAL/extracted/PASCALRAW/original/raw",
+  "dataset": "PASCALRAW (Omid-Zohoor/Ta/Murmann, Stanford Digital Repository)",
+  "scale": "shift8 (round(linear*255)<<8); per-file black/white/bayer from rawpy; RGGB phase-aligned",
+  "light": "daylight (100%, by dataset construction -- false-trigger ground truth complement to SonyNOD/AODRaw low-light coverage)",
+  "n_xml_total": 4259,
+  "n_converted": 4259,
+  "n_skipped": 0,
+  "n_no_gt": 0,
+  "exif": "exiftool best-effort (iso/exposure/f_number may be null)"
+}

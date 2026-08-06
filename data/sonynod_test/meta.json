@@ -1,0 +1,23 @@
+{
+  "source": "/tmp/claude-1000/-home-mini-workspace-dfxisp/26e014be-f178-4351-ae80-67a64c49f5ca/scratchpad/raw_str_labeled_new_Sony_RX100m7_test.json",
+  "camera": "Sony RX100 VII",
+  "bayer": "RGGB",
+  "crop": {
+    "top": 12,
+    "left": 12,
+    "width": 5472,
+    "height": 3648
+  },
+  "black_level": 800,
+  "white_level": 16380,
+  "scale": "shift8 (round(linear*255)<<8) -- compatible with existing SHIFT=8 pipeline",
+  "category_remap": {
+    "1": 0,
+    "2": 1,
+    "3": 2
+  },
+  "n_images_total": 321,
+  "n_converted": 321,
+  "n_skipped": 0,
+  "n_no_gt": 0
+}
